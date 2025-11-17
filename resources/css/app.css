@@ -1,0 +1,48 @@
+@import url("https://fonts.googleapis.com/css2?family=Lato:ital,wght@0,100;0,300;0,400;0,700;0,900;1,100;1,300;1,400;1,700;1,900&family=Merriweather:ital,wght@0,300;0,400;0,700;0,900;1,300;1,400;1,700;1,900&display=swap");
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+trix-editor {
+  @apply !rounded-none !border-0 !border-t !border-t-base-300 !min-h-24;
+}
+
+trix-toolbar .trix-button {
+  @apply !btn !btn-sm !rounded-md before:!size-6 before:!m-auto before:!flex before:!items-center before:!justify-center;
+}
+
+trix-toolbar .trix-button-group {
+  @apply !gap-2 !p-2 !border-0 !mb-0;
+}
+
+@layer base {
+  .no-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .hoverable-scrollbar {
+    scrollbar-width: none;
+    -ms-overflow-style: none;
+  }
+
+  .hoverable-scrollbar:hover {
+    scrollbar-width: auto;
+    -ms-overflow-style: auto;
+  }
+
+  .no-scrollbar::-webkit-scrollbar {
+    display: none;
+  }
+
+  [x-cloak] {
+    display: none !important;
+  }
+}
+
+@layer components {
+  .required {
+    @apply after:content-['*'] after:ml-0.5 after:text-red-500;
+  }
+}

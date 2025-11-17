@@ -1,0 +1,19 @@
+<x-layout.admin>
+  <div class="breadcrumbs text-sm text-base-content/70">
+    <ul>
+      <li><a href="{{ route('admin.gunung.index') }}">Gunung</a></li>
+      <li>List</li>
+    </ul>
+  </div>
+
+  <div class="flex justify-between gap-4 border-b border-base-300 pb-4">
+    <p class="text-2xl font-semibold">Gunung</p>
+    <a class="btn btn-neutral btn-sm" href="{{ route('admin.gunung.create') }}">Tambah Gunung</a>
+  </div>
+
+  <div class="mt-6 rounded-lg border border-base-300">
+    <x-table :routeList="route('admin.api.gunung.index')" routeAction="/admin/api/gunung" name="gunung"></x-table>
+  </div>
+
+  <x-slot:js></x-slot:js>
+</x-layout.admin>
