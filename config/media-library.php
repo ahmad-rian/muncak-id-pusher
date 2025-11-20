@@ -54,7 +54,7 @@ return [
      *
      * This model is only used in Media Library Pro (https://medialibrary.pro)
      */
-    'temporary_upload_model' => false,
+    'temporary_upload_model' => null,
 
     /*
      * When enabled, Media Library Pro will only process temporary uploads that were uploaded
