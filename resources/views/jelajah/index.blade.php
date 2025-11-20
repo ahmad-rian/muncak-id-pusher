@@ -2,6 +2,11 @@
 
   <x-slot:title>{{ 'Jelajahi Jalur Pendakian di Sekitarmu' }}</x-slot:title>
 
+  <x-slot:head>
+    <link rel="stylesheet" href="{{ asset('js/maplibre-gl.css') }}">
+    <script src="{{ asset('js/maplibre-gl.js') }}"></script>
+  </x-slot:head>
+
   @guest
     <dialog class="modal" id="auth-timeout-modal">
       <div class="modal-box">

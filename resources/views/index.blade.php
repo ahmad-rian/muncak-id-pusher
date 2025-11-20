@@ -3,7 +3,7 @@
   <x-slot:title>Rencanakan Destinasi Pendakianmu</x-slot:title>
 
   <header class="relative flex h-96 flex-col justify-center bg-cover bg-center pb-5"
-    style="background-image: url('https://images.unsplash.com/photo-1604143055124-a0130cc54faf?q=80&w=3270&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D')">
+    style="background-image: url('https://images.unsplash.com/photo-1604143055124-a0130cc54faf?q=65&w=1600&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D')">
     <div class="container relative mx-auto max-w-screen-lg bg-cover bg-center px-4 pt-20 md:px-6 lg:px-8 xl:px-12">
       <div class="mx-auto mt-2 rounded-lg p-4 text-center">
         <h1 class="px-4 font-merriweather text-4xl font-extrabold text-white md:text-5xl">MUNCAK.ID</h1>
@@ -27,6 +27,10 @@
       </form>
     </div>
   </header>
+
+  <x-slot:head>
+    <link rel="preload" as="image" href="https://images.unsplash.com/photo-1604143055124-a0130cc54faf?q=65&w=1600&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D">
+  </x-slot:head>
 
   <section class="container relative mx-auto px-4 py-12 md:px-6 lg:px-8 xl:px-12 2xl:px-16">
     <div>

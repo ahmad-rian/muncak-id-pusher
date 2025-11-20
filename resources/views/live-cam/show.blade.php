@@ -6,8 +6,15 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="csrf-token" content="{{ csrf_token() }}">
     <title>{{ $stream->title }} - Live Stream</title>
+
+    <!-- Preconnect to improve performance -->
+    <link rel="preconnect" href="https://js.pusher.com">
+    <link rel="dns-prefetch" href="https://js.pusher.com">
+
     @vite(['resources/css/app.css', 'resources/js/app.js'])
-    <script src="https://js.pusher.com/8.2.0/pusher.min.js"></script>
+
+    <!-- Defer Pusher to not block rendering -->
+    <script defer src="https://js.pusher.com/8.2.0/pusher.min.js"></script>
 </head>
 
 <body class="bg-base-200" data-stream-id="{{ $stream->id }}">
@@ -23,8 +30,6 @@
             <div class="flex-none">
                 <span class="badge badge-error gap-2 mr-4">
                     <span class="relative flex h-2 w-2">
-                        <span
-                            class="absolute inline-flex h-full w-full animate-ping rounded-full bg-white opacity-75"></span>
                         <span class="relative inline-flex h-2 w-2 rounded-full bg-white"></span>
                     </span>
                     LIVE
@@ -46,11 +51,19 @@
                                     muted>
                                 </video>
 
+
                                 <!-- Loading Indicator -->
                                 <div id="loading-indicator"
-                                    class="absolute inset-0 flex items-center justify-center bg-black/50">
-                                    <span class="loading loading-spinner loading-lg text-white"></span>
+                                    class="absolute inset-0 flex flex-col items-center justify-center bg-black/50">
+                                    <span class="loading loading-spinner loading-lg text-white mb-4"></span>
+                                    <div class="text-white text-sm mb-2" id="loading-text">Connecting to stream...</div>
+                                    <div class="w-64 bg-gray-700 rounded-full h-2 overflow-hidden"
+                                        id="loading-progress-container" style="display: none;">
+                                        <div class="bg-primary h-full transition-all duration-300"
+                                            id="loading-progress-bar" style="width: 0%"></div>
+                                    </div>
                                 </div>
+
 
                                 <!-- Offline Placeholder -->
                                 <div id="offline-placeholder"
@@ -64,8 +77,6 @@
                                 <div class="absolute top-4 left-4">
                                     <div class="badge badge-lg gap-2 bg-black/70 text-white border-0">
                                         <span class="relative flex h-3 w-3">
-                                            <span
-                                                class="absolute inline-flex h-full w-full animate-ping rounded-full bg-red-500 opacity-75"></span>
                                             <span class="relative inline-flex h-3 w-3 rounded-full bg-red-500"></span>
                                         </span>
                                         <x-gmdi-visibility-r class="h-4 w-4" />
@@ -234,11 +245,25 @@
             cluster: "{{ config('broadcasting.connections.pusher.options.cluster') }}"
         };
 
-        // Pusher instance untuk trail classifier (shared with viewer-mse.js)
-        window.pusher = new Pusher(window.pusherConfig.key, {
-            cluster: window.pusherConfig.cluster,
-            forceTLS: true
-        });
+        // Initialize Pusher when available (deferred loading)
+        function initPusher() {
+            if (typeof Pusher !== 'undefined') {
+                window.pusher = new Pusher(window.pusherConfig.key, {
+                    cluster: window.pusherConfig.cluster,
+                    forceTLS: true
+                });
+            } else {
+                // Retry after 100ms if Pusher not loaded yet
+                setTimeout(initPusher, 100);
+            }
+        }
+        
+        // Start initialization
+        if (document.readyState === 'loading') {
+            document.addEventListener('DOMContentLoaded', initPusher);
+        } else {
+            initPusher();
+        }
     </script>
 
     @vite(['resources/js/livecam/viewer-mse.js', 'resources/js/livecam/trail-classifier.js'])

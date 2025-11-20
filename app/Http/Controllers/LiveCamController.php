@@ -167,8 +167,9 @@ class LiveCamController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        // Clear chat history for new stream session
         ChatMessage::where('live_stream_id', $stream->id)->delete();
+
+        $this->cleanupAllChunks($stream->id);
 
         $stream->update([
             'status' => 'live',
@@ -216,6 +217,8 @@ class LiveCamController extends Controller
         } catch (\Exception $e) {
             // Ignore Redis errors
         }
+
+        $this->cleanupAllChunks($stream->id);
 
         return response()->json([
             'success' => true,
@@ -537,7 +540,7 @@ class LiveCamController extends Controller
 
         } catch (\Exception $e) {
             \Log::error('Thumbnail upload failed', [
-                'stream_id' => $id,
+                'stream_id' => $stream->id,
                 'error' => $e->getMessage()
             ]);
 
@@ -939,10 +942,51 @@ class LiveCamController extends Controller
      */
     public function getChunk(LiveStream $stream, $index)
     {
+        // Prevent serving chunks if stream is not live
+        if (!$stream->isLive()) {
+            \Log::warning('Attempted to fetch chunk from non-live stream', [
+                'stream_id' => $stream->id,
+                'chunk_index' => $index,
+                'stream_status' => $stream->status
+            ]);
+            return response('Stream is not live', 404);
+        }
+
         $chunkPath = storage_path("app/live-streams/{$stream->id}/chunk_{$index}.webm");
 
         if (!file_exists($chunkPath)) {
             return response('', 404);
+        }
+
+        // Check if chunk is from current stream session
+        // Chunks should be created after stream started
+        $chunkModTime = filemtime($chunkPath);
+        $streamStartTime = $stream->started_at ? $stream->started_at->timestamp : 0;
+
+        // If chunk was created before stream started, it's from old session
+        if ($chunkModTime < $streamStartTime) {
+            \Log::warning('Chunk is from old stream session', [
+                'stream_id' => $stream->id,
+                'chunk_index' => $index,
+                'chunk_time' => date('Y-m-d H:i:s', $chunkModTime),
+                'stream_started' => $stream->started_at
+            ]);
+
+            // Delete old chunk
+            @unlink($chunkPath);
+            return response('Chunk from old session', 404);
+        }
+
+        // Additional safety: reject chunks older than 2 minutes (except init chunk 0)
+        // Keep init segment available throughout the session
+        $chunkAge = time() - $chunkModTime;
+        if ((int) $index !== 0 && $chunkAge > 120) {
+            \Log::warning('Chunk is too old', [
+                'stream_id' => $stream->id,
+                'chunk_index' => $index,
+                'age_seconds' => $chunkAge
+            ]);
+            return response('Chunk too old', 404);
         }
 
         return response()->file($chunkPath, [
@@ -958,11 +1002,30 @@ class LiveCamController extends Controller
      */
     public function getStatus(LiveStream $stream)
     {
+        $latestChunkIndex = -1;
+
+        // Get latest chunk index if stream is live
+        if ($stream->isLive()) {
+            $streamDir = storage_path("app/live-streams/{$stream->id}");
+            if (file_exists($streamDir)) {
+                $chunks = glob($streamDir . '/chunk_*.webm');
+                if (!empty($chunks)) {
+                    // Extract chunk indices and get the maximum
+                    $indices = array_map(function ($path) {
+                        preg_match('/chunk_(\d+)\.webm$/', $path, $matches);
+                        return isset($matches[1]) ? (int) $matches[1] : -1;
+                    }, $chunks);
+                    $latestChunkIndex = max($indices);
+                }
+            }
+        }
+
         return response()->json([
             'is_live' => $stream->isLive(),
             'status' => $stream->status,
             'viewer_count' => $stream->viewer_count,
             'started_at' => $stream->started_at,
+            'latest_chunk_index' => $latestChunkIndex,
         ]);
     }
 
@@ -981,11 +1044,23 @@ class LiveCamController extends Controller
             return;
         }
 
-        for ($i = 0; $i <= $beforeIndex; $i++) {
+        for ($i = 1; $i <= $beforeIndex; $i++) {
             $chunkPath = "{$streamDir}/chunk_{$i}.webm";
             if (file_exists($chunkPath)) {
                 @unlink($chunkPath);
             }
+        }
+    }
+
+    private function cleanupAllChunks($streamId)
+    {
+        $streamDir = storage_path("app/live-streams/{$streamId}");
+        if (!file_exists($streamDir)) {
+            return;
+        }
+        $chunks = glob($streamDir . '/chunk_*.webm');
+        foreach ($chunks as $chunkPath) {
+            @unlink($chunkPath);
         }
     }
 }

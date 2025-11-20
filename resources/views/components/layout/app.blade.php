@@ -24,14 +24,11 @@
     <link rel="manifest" href="{{ asset('favicon/site.webmanifest') }}" />
 
     @vite('resources/css/app.css')
-    <link rel="stylesheet" href="{{ asset('js/maplibre-gl.css') }}">
-    <link rel="stylesheet" href="{{ asset('css/splide.min.css') }}">
+    <link rel="preconnect" href="https://images.unsplash.com" crossorigin>
 
     <script defer src="{{ asset('js/alpine-persist.min.js') }}"></script>
     <script defer src="{{ asset('js/alpine-collapse.min.js') }}"></script>
     <script defer src="{{ asset('js/alpine.min.js') }}"></script>
-    <script src="{{ asset('js/maplibre-gl.js') }}"></script>
-    <script src="{{ asset('js/splide.min.js') }}"></script>
 </head>
 
 <body class="overflow-x-hidden scroll-smooth font-lato transition-all">

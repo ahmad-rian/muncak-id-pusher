@@ -7,6 +7,7 @@ const streamId = window.streamId;
 const streamSlug = window.streamSlug;
 let mediaSource = null;
 let sourceBuffer = null;
+let sbErrorRetries = 0;
 let queue = [];
 let isUpdating = false;
 let lastChunkIndex = -1;
@@ -14,6 +15,7 @@ let fetchInterval = null;
 let isStreamActive = false;
 let isFetchingChunk = false;
 let pendingChunks = new Set(); // Track chunks being fetched
+let retryCounts = new Map(); // Retry counters per chunk index
 
 console.log('👁️ MSE Viewer starting...');
 console.log('Stream ID:', streamId);
@@ -40,23 +42,40 @@ const offline = document.getElementById('offline-placeholder');
 // Listen for new chunks via Pusher
 channel.bind('new-chunk', (data) => {
     console.log('📨 New chunk available:', data.index);
-    if (isStreamActive) {
-        // Always try to fetch the next expected chunk
-        const nextExpected = lastChunkIndex + 1;
-        if (data.index >= nextExpected && !pendingChunks.has(nextExpected)) {
-            fetchAndAppendChunk(nextExpected);
+    if (!isStreamActive) return;
+    if (lastChunkIndex === -1) {
+        if (!pendingChunks.has(0)) {
+            fetchAndAppendChunk(0);
         }
+        return;
+    }
+    const nextExpected = lastChunkIndex + 1;
+    if (data.index >= nextExpected && !pendingChunks.has(nextExpected)) {
+        fetchAndAppendChunk(nextExpected);
     }
 });
 
 // Listen for stream status changes
 channel.bind('stream-started', () => {
-    console.log('🎬 Stream started');
-    cleanupMediaSource(); // Cleanup old MediaSource first
-    isStreamActive = true;
-    lastChunkIndex = -1; // Reset chunk index
-    queue = []; // Clear queue
-    initializeMediaSource();
+    console.log('🎬 Stream started - cleaning up old stream data');
+
+    // Stop any ongoing fetches
+    isStreamActive = false;
+
+    // Complete cleanup of old MediaSource and buffers
+    cleanupMediaSource();
+
+    // Reset all state
+    lastChunkIndex = -1;
+    queue = [];
+    pendingChunks.clear();
+    sbErrorRetries = 0;
+
+    // Small delay to ensure cleanup is complete
+    setTimeout(() => {
+        isStreamActive = true;
+        initializeMediaSource();
+    }, 100);
 });
 
 channel.bind('stream-ended', () => {
@@ -110,6 +129,21 @@ function cleanupMediaSource() {
     isFetchingChunk = false;
     pendingChunks.clear();
 
+    // Remove SourceBuffer event listeners to prevent memory leaks
+    if (sourceBuffer) {
+        try {
+            // Remove all buffered data
+            if (sourceBuffer.buffered.length > 0 && !sourceBuffer.updating) {
+                const start = sourceBuffer.buffered.start(0);
+                const end = sourceBuffer.buffered.end(sourceBuffer.buffered.length - 1);
+                sourceBuffer.remove(start, end);
+                console.log('🗑️ Removed buffered data from', start, 'to', end);
+            }
+        } catch (err) {
+            console.log('Could not remove buffer:', err.message);
+        }
+    }
+
     // Close MediaSource
     if (mediaSource) {
         try {
@@ -125,10 +159,12 @@ function cleanupMediaSource() {
         sourceBuffer = null;
     }
 
-    // Clear video source
+    // Clear video source and reset
     if (video) {
-        video.src = '';
+        video.pause();
+        video.removeAttribute('src');
         video.load();
+        video.currentTime = 0;
     }
 }
 
@@ -154,8 +190,13 @@ function initializeMediaSource() {
         console.log('✅ MediaSource opened');
 
         try {
-            // Use WebM with VP8 only (no audio)
-            sourceBuffer = mediaSource.addSourceBuffer('video/webm; codecs="vp8"');
+            const mime = 'video/webm; codecs="vp8"';
+            if (!window.MediaSource.isTypeSupported(mime)) {
+                alert('WebM VP8 not supported in this browser');
+                return;
+            }
+            sourceBuffer = mediaSource.addSourceBuffer(mime);
+            sourceBuffer.mode = 'sequence';
 
             sourceBuffer.addEventListener('updateend', () => {
                 isUpdating = false;
@@ -164,9 +205,13 @@ function initializeMediaSource() {
 
             sourceBuffer.addEventListener('error', (e) => {
                 console.error('❌ SourceBuffer error:', e);
-                // Stop streaming on error
-                isStreamActive = false;
+                sbErrorRetries += 1;
                 cleanupMediaSource();
+                if (sbErrorRetries <= 3) {
+                    initializeMediaSource();
+                } else {
+                    isStreamActive = false;
+                }
             });
 
             // Hide loading, show video
@@ -194,9 +239,9 @@ function initializeMediaSource() {
 // Start fetching chunks
 function startFetching() {
     console.log('📡 Starting chunk fetching...');
-
-    // Fetch initial chunk
-    fetchAndAppendChunk(0);
+    if (lastChunkIndex === -1 && !pendingChunks.has(0)) {
+        fetchAndAppendChunk(0);
+    }
 
     // Polling fallback: check for next chunk if Pusher event is missed
     // This ensures we don't miss chunks even if network is slow
@@ -219,11 +264,13 @@ function startFetching() {
 async function fetchAndAppendChunk(index) {
     // Skip if stream is not active
     if (!isStreamActive) {
+        console.log(`⏸️ Skipping chunk ${index} - stream not active`);
         return;
     }
 
     // Skip if we already have this chunk
     if (index <= lastChunkIndex) {
+        console.log(`⏭️ Skipping chunk ${index} - already processed (last: ${lastChunkIndex})`);
         return;
     }
 
@@ -243,15 +290,21 @@ async function fetchAndAppendChunk(index) {
         const response = await fetch(`${basePath}/chunk/${index}`);
 
         if (!response.ok) {
-            // Chunk not available - skip to next
             pendingChunks.delete(index);
-            console.log(`⚠️ Chunk ${index} not available (404), skipping...`);
+            console.log(`⚠️ Chunk ${index} not available (${response.status})`);
 
-            // Update lastChunkIndex to skip this chunk
-            lastChunkIndex = index;
+            if (!isStreamActive) {
+                return;
+            }
 
-            // Try next chunk immediately
-            setTimeout(() => fetchAndAppendChunk(index + 1), 100);
+            const retryCount = retryCounts.get(index) || 0;
+            if (retryCount < 3) {
+                retryCounts.set(index, retryCount + 1);
+                setTimeout(() => fetchAndAppendChunk(index), 500 * (retryCount + 1));
+            } else {
+                console.log(`❌ Giving up on chunk ${index} after 3 retries`);
+                retryCounts.delete(index);
+            }
             return;
         }
 
@@ -259,18 +312,31 @@ async function fetchAndAppendChunk(index) {
 
         if (arrayBuffer.byteLength === 0) {
             pendingChunks.delete(index);
-            lastChunkIndex = index;
-            setTimeout(() => fetchAndAppendChunk(index + 1), 100);
+            console.log(`⚠️ Chunk ${index} is empty`);
+
+            // Don't retry if stream is not active
+            if (!isStreamActive) {
+                return;
+            }
+
+            setTimeout(() => fetchAndAppendChunk(index), 500);
             return;
         }
 
         console.log(`📦 Fetched chunk ${index}: ${(arrayBuffer.byteLength / 1024).toFixed(2)} KB`);
 
+        // Double-check stream is still active before processing
+        if (!isStreamActive) {
+            console.log(`⏸️ Stream became inactive, discarding chunk ${index}`);
+            pendingChunks.delete(index);
+            return;
+        }
+
         // Update last chunk index BEFORE adding to queue
         lastChunkIndex = index;
 
-        // Remove from pending
         pendingChunks.delete(index);
+        retryCounts.delete(index);
 
         // Add to queue
         queue.push({
@@ -281,11 +347,20 @@ async function fetchAndAppendChunk(index) {
         processQueue();
 
     } catch (err) {
-        // Remove from pending on error
         pendingChunks.delete(index);
-        console.log(`⚠️ Error fetching chunk ${index}, skipping...`);
-        lastChunkIndex = index;
-        setTimeout(() => fetchAndAppendChunk(index + 1), 100);
+        console.log(`❌ Error fetching chunk ${index}:`, err.message);
+
+        if (!isStreamActive) {
+            return;
+        }
+
+        const retryCount = retryCounts.get(index) || 0;
+        if (retryCount < 3) {
+            retryCounts.set(index, retryCount + 1);
+            setTimeout(() => fetchAndAppendChunk(index), 500 * (retryCount + 1));
+        } else {
+            retryCounts.delete(index);
+        }
     }
 }
 
@@ -314,6 +389,17 @@ function processQueue() {
         isUpdating = true;
         sourceBuffer.appendBuffer(chunk.data);
         console.log(`✅ Appended chunk ${chunk.index}`);
+
+        // Check if we need to skip to live position after init segment
+        if (chunk.index === 0 && window.targetLiveChunk && window.targetLiveChunk > 0) {
+            console.log(`⏩ Skipping to live position: chunk ${window.targetLiveChunk}`);
+            // Jump to target chunk
+            lastChunkIndex = window.targetLiveChunk - 1;
+            // Clear target so we don't skip again
+            window.targetLiveChunk = null;
+            // Fetch the target chunk immediately
+            setTimeout(() => fetchAndAppendChunk(lastChunkIndex + 1), 100);
+        }
 
         // Auto-play as soon as possible
         if (video.paused) {
@@ -359,6 +445,37 @@ async function checkStreamStatus() {
 
         if (data.is_live) {
             console.log('🟢 Stream is live');
+
+            // Get latest chunk index to determine strategy
+            const latestChunkIndex = data.latest_chunk_index || -1;
+
+            if (latestChunkIndex >= 0) {
+                // Calculate target chunk (latest - 2 for buffer)
+                const targetChunkIndex = Math.max(0, latestChunkIndex - 2);
+
+                if (targetChunkIndex > 0) {
+                    // Stream has been running, need to fetch chunk 0 first (initialization segment)
+                    // Then skip to target chunk
+                    console.log(`📍 Stream in progress. Will fetch chunk 0 (init), then jump to chunk ${targetChunkIndex} (latest: ${latestChunkIndex})`);
+
+                    // Store target chunk for later
+                    window.targetLiveChunk = targetChunkIndex;
+
+                    // Start from -1 so first fetch is chunk 0
+                    lastChunkIndex = -1;
+                } else {
+                    // Stream just started, play from beginning
+                    console.log('📍 Starting from chunk 0 (stream just started)');
+                    lastChunkIndex = -1;
+                    window.targetLiveChunk = null;
+                }
+            } else {
+                // No chunks yet, start from beginning
+                lastChunkIndex = -1;
+                window.targetLiveChunk = null;
+                console.log('📍 Starting from chunk 0 (no chunks available yet)');
+            }
+
             isStreamActive = true;
             initializeMediaSource();
         } else {

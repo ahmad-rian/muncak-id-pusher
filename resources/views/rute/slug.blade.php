@@ -2,6 +2,12 @@
 
   <x-slot:title>{{ "Jalur Pendakian Gunung {$rute->gunung->nama} via $rute->nama" }}</x-slot:title>
 
+  <x-slot:head>
+    <link rel="stylesheet" href="{{ asset('js/maplibre-gl.css') }}">
+    <link rel="stylesheet" href="{{ asset('css/splide.min.css') }}">
+    <script src="{{ asset('js/maplibre-gl.js') }}"></script>
+  </x-slot:head>
+
   <div class="container mx-auto px-4 pb-12 pt-20 md:px-6 xl:px-8">
     <div class="no-scrollbar breadcrumbs text-sm">
       <ul>
@@ -651,6 +657,7 @@
   </div>
 
   <x-slot:js>
+    <script src="{{ asset('js/splide.min.js') }}"></script>
     <script title="alpine.js">
       let map;
 
