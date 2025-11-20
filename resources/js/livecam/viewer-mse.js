@@ -4,6 +4,7 @@
  */
 
 const streamId = window.streamId;
+const streamSlug = window.streamSlug;
 let mediaSource = null;
 let sourceBuffer = null;
 let queue = [];
@@ -11,15 +12,23 @@ let isUpdating = false;
 let lastChunkIndex = -1;
 let fetchInterval = null;
 let isStreamActive = false;
+let isFetchingChunk = false;
+let pendingChunks = new Set(); // Track chunks being fetched
 
 console.log('👁️ MSE Viewer starting...');
 console.log('Stream ID:', streamId);
+console.log('Stream Slug:', streamSlug);
 
-// Pusher configuration
-const pusher = new Pusher(window.pusherConfig.key, {
+// Pusher configuration - use shared instance if available (dari trail-classifier.js)
+const pusher = window.pusher || new Pusher(window.pusherConfig.key, {
     cluster: window.pusherConfig.cluster,
     forceTLS: true
 });
+
+// Make pusher globally available
+if (!window.pusher) {
+    window.pusher = pusher;
+}
 
 const channel = pusher.subscribe(`stream.${streamId}`);
 console.log('📡 Viewer subscribed to channel:', `stream.${streamId}`);
@@ -32,9 +41,10 @@ const offline = document.getElementById('offline-placeholder');
 channel.bind('new-chunk', (data) => {
     console.log('📨 New chunk available:', data.index);
     if (isStreamActive) {
-        // Only fetch the next sequential chunk
-        if (data.index === lastChunkIndex + 1) {
-            fetchAndAppendChunk(data.index);
+        // Always try to fetch the next expected chunk
+        const nextExpected = lastChunkIndex + 1;
+        if (data.index >= nextExpected && !pendingChunks.has(nextExpected)) {
+            fetchAndAppendChunk(nextExpected);
         }
     }
 });
@@ -74,6 +84,16 @@ channel.bind('App\\Events\\ViewerCountUpdated', (data) => {
     }
 });
 
+// Listen for mirror state changes from broadcaster
+channel.bind('App\\Events\\MirrorStateChanged', (data) => {
+    console.log('🪞 Mirror state changed:', data.is_mirrored);
+    const videoPlayer = document.getElementById('video-player');
+    if (videoPlayer) {
+        videoPlayer.style.transform = data.is_mirrored ? 'scaleX(-1)' : 'scaleX(1)';
+        videoPlayer.style.transition = 'transform 0.3s ease';
+    }
+});
+
 // Cleanup MediaSource
 function cleanupMediaSource() {
     console.log('🧹 Cleaning up MediaSource...');
@@ -84,9 +104,11 @@ function cleanupMediaSource() {
         fetchInterval = null;
     }
 
-    // Clear queue
+    // Clear queue and flags
     queue = [];
     isUpdating = false;
+    isFetchingChunk = false;
+    pendingChunks.clear();
 
     // Close MediaSource
     if (mediaSource) {
@@ -132,8 +154,8 @@ function initializeMediaSource() {
         console.log('✅ MediaSource opened');
 
         try {
-            // Use WebM with VP8 + Opus (same as broadcaster)
-            sourceBuffer = mediaSource.addSourceBuffer('video/webm; codecs="vp8, opus"');
+            // Use WebM with VP8 only (no audio)
+            sourceBuffer = mediaSource.addSourceBuffer('video/webm; codecs="vp8"');
 
             sourceBuffer.addEventListener('updateend', () => {
                 isUpdating = false;
@@ -178,16 +200,19 @@ function startFetching() {
 
     // Polling fallback: check for next chunk if Pusher event is missed
     // This ensures we don't miss chunks even if network is slow
-    const pollingInterval = setInterval(() => {
+    fetchInterval = setInterval(() => {
         if (!isStreamActive || !mediaSource || mediaSource.readyState !== 'open') {
-            clearInterval(pollingInterval);
+            clearInterval(fetchInterval);
+            fetchInterval = null;
             return;
         }
 
-        // Try to fetch the next expected chunk
+        // Try to fetch the next expected chunk if not already fetching
         const nextIndex = lastChunkIndex + 1;
-        fetchAndAppendChunk(nextIndex);
-    }, 1200); // Poll every 1.2 seconds (slightly longer than 1s chunk interval)
+        if (!pendingChunks.has(nextIndex)) {
+            fetchAndAppendChunk(nextIndex);
+        }
+    }, 2500); // Poll every 2.5 seconds (backup mechanism)
 }
 
 // Fetch and append chunk
@@ -202,25 +227,50 @@ async function fetchAndAppendChunk(index) {
         return;
     }
 
+    // Skip if this chunk is already being fetched
+    if (pendingChunks.has(index)) {
+        return;
+    }
+
+    // Mark as pending
+    pendingChunks.add(index);
+
     const basePath = window.location.pathname.includes('/admin/live-stream')
         ? `/admin/live-stream/${streamId}`
-        : `/live-cam/${streamId}`;
+        : `/live-cam/${streamSlug}`;
 
     try {
         const response = await fetch(`${basePath}/chunk/${index}`);
 
         if (!response.ok) {
-            // Chunk not available yet
+            // Chunk not available - skip to next
+            pendingChunks.delete(index);
+            console.log(`⚠️ Chunk ${index} not available (404), skipping...`);
+
+            // Update lastChunkIndex to skip this chunk
+            lastChunkIndex = index;
+
+            // Try next chunk immediately
+            setTimeout(() => fetchAndAppendChunk(index + 1), 100);
             return;
         }
 
         const arrayBuffer = await response.arrayBuffer();
 
         if (arrayBuffer.byteLength === 0) {
+            pendingChunks.delete(index);
+            lastChunkIndex = index;
+            setTimeout(() => fetchAndAppendChunk(index + 1), 100);
             return;
         }
 
         console.log(`📦 Fetched chunk ${index}: ${(arrayBuffer.byteLength / 1024).toFixed(2)} KB`);
+
+        // Update last chunk index BEFORE adding to queue
+        lastChunkIndex = index;
+
+        // Remove from pending
+        pendingChunks.delete(index);
 
         // Add to queue
         queue.push({
@@ -228,11 +278,14 @@ async function fetchAndAppendChunk(index) {
             data: arrayBuffer
         });
 
-        lastChunkIndex = index;
         processQueue();
 
     } catch (err) {
-        // Silently fail - chunk might not be available yet
+        // Remove from pending on error
+        pendingChunks.delete(index);
+        console.log(`⚠️ Error fetching chunk ${index}, skipping...`);
+        lastChunkIndex = index;
+        setTimeout(() => fetchAndAppendChunk(index + 1), 100);
     }
 }
 
@@ -262,15 +315,30 @@ function processQueue() {
         sourceBuffer.appendBuffer(chunk.data);
         console.log(`✅ Appended chunk ${chunk.index}`);
 
-        // Auto-play and unmute
-        if (video.paused && video.readyState >= 2) {
+        // Auto-play as soon as possible
+        if (video.paused) {
+            // Try to play immediately after any chunk is appended
+            // readyState check removed - let browser decide when it's ready
             video.play().then(() => {
-                // Unmute after successful play (browsers allow this)
-                video.muted = false;
-                console.log('🔊 Video playing with audio');
+                // Keep muted (no audio track)
+                video.muted = true;
+                console.log('📹 Video playing (video only) at chunk', chunk.index);
             }).catch(() => {
-                console.log('Auto-play prevented, user interaction required');
+                // Silently fail - browser will play when ready
+                // This is normal for the first few chunks
             });
+        }
+
+        // Monitor buffer health
+        if (video.buffered.length > 0) {
+            const bufferEnd = video.buffered.end(0);
+            const currentTime = video.currentTime;
+            const bufferAhead = bufferEnd - currentTime;
+
+            // Log buffer status occasionally
+            if (chunk.index % 5 === 0) {
+                console.log(`📊 Buffer: ${bufferAhead.toFixed(1)}s ahead`);
+            }
         }
 
     } catch (err) {
@@ -283,7 +351,7 @@ function processQueue() {
 async function checkStreamStatus() {
     const basePath = window.location.pathname.includes('/admin/live-stream')
         ? `/admin/live-stream/${streamId}`
-        : `/live-cam/${streamId}`;
+        : `/live-cam/${streamSlug}`;
 
     try {
         const response = await fetch(`${basePath}/status`);
@@ -308,7 +376,7 @@ async function checkStreamStatus() {
 function joinStream() {
     const basePath = window.location.pathname.includes('/admin/live-stream')
         ? `/admin/live-stream/${streamId}`
-        : `/live-cam/${streamId}`;
+        : `/live-cam/${streamSlug}`;
 
     fetch(`${basePath}/viewer-count`, {
         method: 'POST',
@@ -324,7 +392,7 @@ function joinStream() {
 function leaveStream() {
     const basePath = window.location.pathname.includes('/admin/live-stream')
         ? `/admin/live-stream/${streamId}`
-        : `/live-cam/${streamId}`;
+        : `/live-cam/${streamSlug}`;
 
     fetch(`${basePath}/viewer-count`, {
         method: 'POST',
@@ -336,11 +404,48 @@ function leaveStream() {
     }).catch(err => console.error('Failed to leave stream:', err));
 }
 
+// Load chat history
+async function loadChatHistory() {
+    try {
+        const basePath = window.location.pathname.includes('/admin/live-stream')
+            ? `/admin/live-stream/${streamId}`
+            : `/live-cam/${streamSlug}`;
+
+        const response = await fetch(`${basePath}/chat-history`);
+        const data = await response.json();
+
+        if (data.success && data.messages && chatMessages) {
+            // Clear existing messages
+            chatMessages.innerHTML = '';
+
+            // Add history messages
+            data.messages.forEach(msg => {
+                const messageDiv = document.createElement('div');
+                messageDiv.className = 'mb-2';
+                messageDiv.innerHTML = `
+                    <div class="flex gap-2">
+                        <strong class="text-primary">${msg.username}:</strong>
+                        <span>${msg.message}</span>
+                    </div>
+                `;
+                chatMessages.appendChild(messageDiv);
+            });
+
+            // Scroll to bottom
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+            console.log(`💬 Loaded ${data.messages.length} chat messages from history`);
+        }
+    } catch (err) {
+        console.error('Failed to load chat history:', err);
+    }
+}
+
 // Initialize - wait for Pusher connection
 channel.bind('pusher:subscription_succeeded', () => {
     console.log('✅ Connected to Pusher channel');
     checkStreamStatus();
     joinStream(); // Join when connected
+    loadChatHistory(); // Load chat history
 });
 
 // Leave when page unloads
@@ -366,7 +471,7 @@ if (chatForm && chatInput) {
         try {
             const basePath = window.location.pathname.includes('/admin/live-stream')
                 ? `/admin/live-stream/${streamId}`
-                : `/live-cam/${streamId}`;
+                : `/live-cam/${streamSlug}`;
 
             const response = await fetch(`${basePath}/chat`, {
                 method: 'POST',

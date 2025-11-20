@@ -41,10 +41,10 @@
                             <x-gmdi-hd-r class="size-4" />
                             {{ $stream->current_quality ?? '720p' }}
                         </div>
-                        @if ($stream->mountain)
+                        @if ($stream->hikingTrail)
                             <div class="badge badge-outline gap-1">
                                 <x-gmdi-terrain-r class="size-4" />
-                                {{ $stream->mountain->nama }}
+                                {{ $stream->hikingTrail->nama }}
                             </div>
                         @endif
                     </div>
@@ -59,19 +59,19 @@
 
                     <div class="card-actions mt-4 justify-end">
                         @if ($stream->status === 'live')
-                            <a class="btn btn-sm btn-primary" href="{{ route('live-cam.show', $stream->id) }}"
+                            <a class="btn btn-sm btn-primary" href="{{ route('live-cam.show', $stream->slug) }}"
                                 target="_blank">
                                 <x-gmdi-visibility-r class="size-4" />
                                 Lihat Stream
                             </a>
                         @else
                             <a class="btn btn-sm btn-neutral"
-                                href="{{ route('admin.live-stream.broadcast', $stream->id) }}">
+                                href="{{ route('admin.live-stream.broadcast', $stream->slug) }}">
                                 <x-gmdi-videocam-r class="size-4" />
                                 Mulai Siaran
                             </a>
                         @endif
-                        <form method="POST" action="{{ route('admin.live-stream.destroy', $stream->id) }}"
+                        <form method="POST" action="{{ route('admin.live-stream.destroy', $stream->slug) }}"
                             onsubmit="return confirm('Yakin ingin menghapus stream ini?')">
                             @csrf
                             @method('DELETE')

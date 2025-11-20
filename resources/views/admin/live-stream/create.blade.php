@@ -19,24 +19,27 @@
                 <form method="POST" action="{{ route('admin.live-stream.store') }}">
                     @csrf
 
-                    <!-- Gunung Selection with Search -->
+                    <!-- Jalur Pendakian Selection with Search -->
                     <div class="form-control mb-6">
                         <label class="label">
-                            <span class="label-text font-semibold">Pilih Gunung <span class="text-error">*</span></span>
+                            <span class="label-text font-semibold">Pilih Jalur Pendakian <span class="text-error">*</span></span>
                         </label>
-                        <select id="mountain-select" name="mountain_id" class="select select-bordered w-full" required>
-                            <option value="" disabled selected>Cari dan pilih gunung...</option>
-                            @foreach ($mountains as $mountain)
-                                <option value="{{ $mountain->id }}"
-                                    {{ old('mountain_id') == $mountain->id ? 'selected' : '' }}>
-                                    {{ $mountain->nama }} - {{ $mountain->elev ?? ($mountain->ketinggian ?? 0) }}m
-                                    @if ($mountain->kabupatenKota && $mountain->kabupatenKota->provinsi)
-                                        ({{ $mountain->kabupatenKota->provinsi->nama }})
+                        <select id="hiking-trail-select" name="hiking_trail_id" class="select select-bordered w-full" required>
+                            <option value="" disabled selected>Cari dan pilih jalur pendakian...</option>
+                            @foreach ($hikingTrails as $trail)
+                                <option value="{{ $trail->id }}"
+                                    {{ old('hiking_trail_id') == $trail->id ? 'selected' : '' }}>
+                                    {{ $trail->nama }}
+                                    @if ($trail->gunung)
+                                        ({{ $trail->gunung->nama }})
+                                    @endif
+                                    @if ($trail->gunung && $trail->gunung->kabupatenKota && $trail->gunung->kabupatenKota->provinsi)
+                                        - {{ $trail->gunung->kabupatenKota->provinsi->nama }}
                                     @endif
                                 </option>
                             @endforeach
                         </select>
-                        @error('mountain_id')
+                        @error('hiking_trail_id')
                             <label class="label">
                                 <span class="label-text-alt text-error">{{ $message }}</span>
                             </label>
@@ -139,11 +142,11 @@
 
         <script>
             document.addEventListener('DOMContentLoaded', function() {
-                const element = document.getElementById('mountain-select');
+                const element = document.getElementById('hiking-trail-select');
                 const choices = new Choices(element, {
                     searchEnabled: true,
-                    searchPlaceholderValue: 'Ketik untuk mencari gunung...',
-                    noResultsText: 'Gunung tidak ditemukan',
+                    searchPlaceholderValue: 'Ketik untuk mencari jalur pendakian...',
+                    noResultsText: 'Jalur pendakian tidak ditemukan',
                     itemSelectText: 'Klik untuk pilih',
                     shouldSort: false,
                     searchResultLimit: 10,

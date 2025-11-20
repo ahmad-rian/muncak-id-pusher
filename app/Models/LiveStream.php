@@ -5,14 +5,16 @@ namespace App\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Support\Str;
 
 class LiveStream extends Model
 {
     protected $fillable = [
         'title',
+        'slug',
         'description',
-        'mountain_id',
+        'hiking_trail_id',
         'location',
         'broadcaster_id',
         'status',
@@ -44,12 +46,30 @@ class LiveStream extends Model
             if (empty($stream->pusher_channel_id)) {
                 $stream->pusher_channel_id = 'live-stream.' . Str::random(16);
             }
+            if (empty($stream->slug)) {
+                $stream->slug = Str::slug($stream->title) . '-' . Str::random(6);
+            }
+        });
+
+        static::updating(function ($stream) {
+            // Update slug when title changes
+            if ($stream->isDirty('title') && !$stream->isDirty('slug')) {
+                $stream->slug = Str::slug($stream->title) . '-' . Str::random(6);
+            }
         });
     }
 
-    public function mountain(): BelongsTo
+    /**
+     * Get the route key for the model.
+     */
+    public function getRouteKeyName()
     {
-        return $this->belongsTo(Gunung::class, 'mountain_id');
+        return 'slug';
+    }
+
+    public function hikingTrail(): BelongsTo
+    {
+        return $this->belongsTo(Rute::class, 'hiking_trail_id');
     }
 
     public function broadcaster(): BelongsTo
@@ -65,6 +85,18 @@ class LiveStream extends Model
     public function analytics(): HasMany
     {
         return $this->hasMany(StreamAnalytic::class);
+    }
+
+    public function classifications(): HasMany
+    {
+        return $this->hasMany(TrailClassification::class);
+    }
+
+    public function latestClassification(): HasOne
+    {
+        return $this->hasOne(TrailClassification::class)
+            ->where('status', 'completed')
+            ->latestOfMany('classified_at');
     }
 
     public function isLive(): bool

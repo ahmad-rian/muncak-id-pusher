@@ -99,10 +99,14 @@
                                 @endif
 
                                 <div class="flex flex-wrap gap-4">
-                                    @if ($stream->mountain)
+                                    @if ($stream->hikingTrail)
                                         <div class="flex items-center gap-2">
-                                            <x-gmdi-terrain-r class="h-5 w-5" />
-                                            <span>{{ $stream->mountain->nama }}</span>
+                                            <x-gmdi-terrain-r class="h-5 w-5 text-primary" />
+                                            <span>{{ $stream->hikingTrail->nama }}
+                                                @if($stream->hikingTrail->gunung)
+                                                    ({{ $stream->hikingTrail->gunung->nama }})
+                                                @endif
+                                            </span>
                                         </div>
                                     @endif
                                     @if ($stream->location)
@@ -128,13 +132,55 @@
                     </div>
                 </div>
 
-                <!-- Chat Section (30%) -->
-                <div class="lg:col-span-4">
-                    <div class="card bg-white shadow-xl h-[600px] flex flex-col">
+                <!-- Sidebar (30%) -->
+                <div class="lg:col-span-4 space-y-4">
+
+                    <!-- Trail Classification Display -->
+                    <div id="classification-display" class="card bg-white shadow-xl hidden">
+                        <div class="card-body p-4">
+                            <div class="flex items-center justify-between mb-3">
+                                <h3 class="font-bold text-sm flex items-center gap-2">
+                                    <x-gmdi-analytics-r class="h-4 w-4" />
+                                    Kondisi Jalur
+                                </h3>
+                                <span id="classification-time" class="text-xs text-base-content/60">Memuat...</span>
+                            </div>
+
+                            <div class="space-y-2">
+                                <!-- Weather -->
+                                <div class="flex items-center justify-between py-2 border-b border-base-200">
+                                    <span class="text-sm text-base-content/70">Cuaca</span>
+                                    <span id="classification-weather" class="text-sm font-semibold">-</span>
+                                </div>
+
+                                <!-- Crowd -->
+                                <div class="flex items-center justify-between py-2 border-b border-base-200">
+                                    <span class="text-sm text-base-content/70">Kepadatan</span>
+                                    <span id="classification-crowd" class="text-sm font-semibold">-</span>
+                                </div>
+
+                                <!-- Visibility -->
+                                <div class="flex items-center justify-between py-2 border-b border-base-200">
+                                    <span class="text-sm text-base-content/70">Visibilitas</span>
+                                    <span id="classification-visibility" class="text-sm font-semibold">-</span>
+                                </div>
+
+                                <!-- Recommendation -->
+                                <div class="mt-3 p-2 bg-base-200 rounded-lg">
+                                    <p id="classification-recommendation" class="text-xs text-center">
+                                        💡 Data akan diperbarui setiap 5 menit
+                                    </p>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Chat Card -->
+                    <div class="card bg-white shadow-xl flex-1 flex flex-col" style="min-height: 400px;">
                         <!-- Chat Header -->
                         <div class="card-body p-4 border-b border-base-300">
                             <div class="flex items-center justify-between">
-                                <h3 class="font-bold text-lg">Live Chat</h3>
+                                <h3 class="font-bold text-base">Live Chat</h3>
                                 <div class="badge badge-sm gap-1">
                                     <x-gmdi-people-r class="h-3 w-3" />
                                     <span id="chat-viewer-count">{{ $stream->viewer_count }}</span>
@@ -167,6 +213,7 @@
                             </div>
                         </div>
                     </div>
+
                 </div>
 
             </div>
@@ -174,8 +221,9 @@
     </div>
 
     <script>
-        // Stream ID
+        // Stream ID and Slug
         window.streamId = {{ $stream->id }};
+        window.streamSlug = "{{ $stream->slug }}";
 
         // Chat username
         window.chatUsername = "{{ $username }}";
@@ -185,9 +233,15 @@
             key: "{{ config('broadcasting.connections.pusher.key') }}",
             cluster: "{{ config('broadcasting.connections.pusher.options.cluster') }}"
         };
+
+        // Pusher instance untuk trail classifier (shared with viewer-mse.js)
+        window.pusher = new Pusher(window.pusherConfig.key, {
+            cluster: window.pusherConfig.cluster,
+            forceTLS: true
+        });
     </script>
 
-    @vite(['resources/js/livecam/viewer-mse.js'])
+    @vite(['resources/js/livecam/viewer-mse.js', 'resources/js/livecam/trail-classifier.js'])
 </body>
 
 </html>

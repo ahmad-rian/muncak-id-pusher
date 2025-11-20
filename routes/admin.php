@@ -144,21 +144,27 @@ Route::prefix('admin')->middleware(['auth', 'role:admin'])->group(function () {
         Route::get('', [\App\Http\Controllers\LiveCamController::class, 'index'])->name('admin.live-stream.index');
         Route::get('create', [\App\Http\Controllers\LiveCamController::class, 'create'])->name('admin.live-stream.create');
         Route::post('', [\App\Http\Controllers\LiveCamController::class, 'store'])->name('admin.live-stream.store');
-        Route::get('broadcast/{id}', [\App\Http\Controllers\LiveCamController::class, 'broadcast'])->name('admin.live-stream.broadcast');
-        Route::post('{id}/start', [\App\Http\Controllers\LiveCamController::class, 'startStream'])->name('admin.live-stream.start');
-        Route::post('{id}/stop', [\App\Http\Controllers\LiveCamController::class, 'stopStream'])->name('admin.live-stream.stop');
-        Route::post('{id}/change-quality', [\App\Http\Controllers\LiveCamController::class, 'changeQuality'])->name('admin.live-stream.change-quality');
-        Route::delete('{id}', [\App\Http\Controllers\LiveCamController::class, 'destroy'])->name('admin.live-stream.destroy');
+        Route::get('broadcast/{stream:slug}', [\App\Http\Controllers\LiveCamController::class, 'broadcast'])->name('admin.live-stream.broadcast');
+        Route::post('{stream:slug}/start', [\App\Http\Controllers\LiveCamController::class, 'startStream'])->name('admin.live-stream.start');
+        Route::post('{stream:slug}/stop', [\App\Http\Controllers\LiveCamController::class, 'stopStream'])->name('admin.live-stream.stop');
+        Route::post('{stream:slug}/change-quality', [\App\Http\Controllers\LiveCamController::class, 'changeQuality'])->name('admin.live-stream.change-quality');
+        Route::delete('{stream:slug}', [\App\Http\Controllers\LiveCamController::class, 'destroy'])->name('admin.live-stream.destroy');
 
         // WebRTC Signaling routes (deprecated - kept for backward compatibility)
-        Route::post('{id}/viewer-ready', [\App\Http\Controllers\LiveCamController::class, 'viewerReady'])->name('admin.live-stream.viewer-ready');
-        Route::post('{id}/send-signal', [\App\Http\Controllers\LiveCamController::class, 'sendSignal'])->name('admin.live-stream.send-signal');
-        Route::post('{id}/end', [\App\Http\Controllers\LiveCamController::class, 'stopStream'])->name('admin.live-stream.end');
+        Route::post('{stream:slug}/viewer-ready', [\App\Http\Controllers\LiveCamController::class, 'viewerReady'])->name('admin.live-stream.viewer-ready');
+        Route::post('{stream:slug}/send-signal', [\App\Http\Controllers\LiveCamController::class, 'sendSignal'])->name('admin.live-stream.send-signal');
+        Route::post('{stream:slug}/end', [\App\Http\Controllers\LiveCamController::class, 'stopStream'])->name('admin.live-stream.end');
 
         // MSE Chunked Streaming routes (NEW - scalable live streaming)
-        Route::post('{id}/upload-chunk', [\App\Http\Controllers\LiveCamController::class, 'uploadChunk'])->name('admin.live-stream.upload-chunk');
-        Route::get('{id}/chunk/{index}', [\App\Http\Controllers\LiveCamController::class, 'getChunk'])->name('admin.live-stream.get-chunk');
-        Route::get('{id}/status', [\App\Http\Controllers\LiveCamController::class, 'getStatus'])->name('admin.live-stream.status');
+        Route::post('{stream:slug}/upload-chunk', [\App\Http\Controllers\LiveCamController::class, 'uploadChunk'])->name('admin.live-stream.upload-chunk');
+        Route::get('{stream:slug}/chunk/{index}', [\App\Http\Controllers\LiveCamController::class, 'getChunk'])->name('admin.live-stream.get-chunk');
+        Route::get('{stream:slug}/status', [\App\Http\Controllers\LiveCamController::class, 'getStatus'])->name('admin.live-stream.status');
+
+        // Mirror state broadcast
+        Route::post('{stream:slug}/mirror-state', [\App\Http\Controllers\LiveCamController::class, 'updateMirrorState'])->name('admin.live-stream.mirror-state');
+
+        // Thumbnail upload
+        Route::post('{stream:slug}/thumbnail', [\App\Http\Controllers\LiveCamController::class, 'uploadThumbnail'])->name('admin.live-stream.thumbnail');
     });
 
     /**

@@ -38,6 +38,13 @@
                             <x-gmdi-videocam-off-r class="mb-4 h-24 w-24 opacity-50" />
                             <p class="text-lg">No camera detected</p>
                         </div>
+
+                        <!-- Mirror Camera Button (Overlay) -->
+                        <div class="absolute bottom-4 right-4">
+                            <button id="mirror-camera" class="btn btn-sm btn-circle btn-ghost bg-black/50 text-white hover:bg-black/70" title="Mirror Camera">
+                                <x-gmdi-flip-r class="h-5 w-5" />
+                            </button>
+                        </div>
                     </div>
 
                     <!-- Device Selectors -->
@@ -135,14 +142,6 @@
                         </div>
                     </div>
 
-                    <!-- Connection Status -->
-                    <div class="mt-4">
-                        <div class="flex items-center gap-2">
-                            <div id="connection-indicator" class="h-3 w-3 rounded-full bg-error"></div>
-                            <span class="text-sm">Connection: <span id="connection-status"
-                                    class="font-semibold">Disconnected</span></span>
-                        </div>
-                    </div>
                 </div>
             </div>
 
@@ -175,10 +174,13 @@
                             <code
                                 class="ml-2 rounded bg-base-200 px-2 py-1">{{ substr($stream->stream_key, 0, 20) }}...</code>
                         </div>
-                        @if ($stream->mountain)
+                        @if ($stream->hikingTrail)
                             <div>
-                                <span class="font-semibold">Mountain:</span>
-                                <span class="ml-2">{{ $stream->mountain->nama }}</span>
+                                <span class="font-semibold">Jalur Pendakian:</span>
+                                <span class="ml-2">{{ $stream->hikingTrail->nama }}</span>
+                                @if($stream->hikingTrail->gunung)
+                                    <span class="text-base-content/70">({{ $stream->hikingTrail->gunung->nama }})</span>
+                                @endif
                             </div>
                         @endif
                         <div>
@@ -205,6 +207,7 @@
         <script>
             // Configuration for broadcaster
             window.streamId = {{ $stream->id }};
+            window.streamSlug = "{{ $stream->slug }}";
             window.pusherConfig = {
                 key: "{{ config('broadcasting.connections.pusher.key') }}",
                 cluster: "{{ config('broadcasting.connections.pusher.options.cluster') }}"

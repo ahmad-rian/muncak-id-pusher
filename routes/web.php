@@ -50,18 +50,25 @@ Route::prefix('artikel')->group(function () {
 // Public routes for viewing live streams
 Route::prefix('live-cam')->group(function () {
     Route::get('', [\App\Http\Controllers\LiveCamController::class, 'index'])->name('live-cam.index');
-    Route::get('{id}', [\App\Http\Controllers\LiveCamController::class, 'show'])->name('live-cam.show');
-    Route::post('{id}/chat', [\App\Http\Controllers\LiveCamController::class, 'sendChat'])->name('live-cam.chat');
-    Route::get('{id}/quality', [\App\Http\Controllers\LiveCamController::class, 'getQuality'])->name('live-cam.quality');
-    Route::post('{id}/viewer-count', [\App\Http\Controllers\LiveCamController::class, 'updateViewerCount'])->name('live-cam.viewer-count');
+    Route::get('{stream:slug}', [\App\Http\Controllers\LiveCamController::class, 'show'])->name('live-cam.show');
+    Route::post('{stream:slug}/chat', [\App\Http\Controllers\LiveCamController::class, 'sendChat'])->name('live-cam.chat');
+    Route::get('{stream:slug}/chat-history', [\App\Http\Controllers\LiveCamController::class, 'getChatHistory'])->name('live-cam.chat-history');
+    Route::get('{stream:slug}/quality', [\App\Http\Controllers\LiveCamController::class, 'getQuality'])->name('live-cam.quality');
+    Route::post('{stream:slug}/viewer-count', [\App\Http\Controllers\LiveCamController::class, 'updateViewerCount'])->name('live-cam.viewer-count');
 
     // WebRTC Signaling routes (deprecated - kept for backward compatibility)
-    Route::post('{id}/viewer-ready', [\App\Http\Controllers\LiveCamController::class, 'viewerReady'])->name('live-cam.viewer-ready');
-    Route::post('{id}/send-signal', [\App\Http\Controllers\LiveCamController::class, 'sendSignal'])->name('live-cam.send-signal');
+    Route::post('{stream:slug}/viewer-ready', [\App\Http\Controllers\LiveCamController::class, 'viewerReady'])->name('live-cam.viewer-ready');
+    Route::post('{stream:slug}/send-signal', [\App\Http\Controllers\LiveCamController::class, 'sendSignal'])->name('live-cam.send-signal');
 
     // MSE Chunked Streaming routes (NEW - scalable live streaming)
-    Route::get('{id}/chunk/{index}', [\App\Http\Controllers\LiveCamController::class, 'getChunk'])->name('live-cam.get-chunk');
-    Route::get('{id}/status', [\App\Http\Controllers\LiveCamController::class, 'getStatus'])->name('live-cam.status');
+    Route::get('{stream:slug}/chunk/{index}', [\App\Http\Controllers\LiveCamController::class, 'getChunk'])->name('live-cam.get-chunk');
+    Route::get('{stream:slug}/status', [\App\Http\Controllers\LiveCamController::class, 'getStatus'])->name('live-cam.status');
+
+    // Mirror state broadcast
+    Route::post('{stream:slug}/mirror-state', [\App\Http\Controllers\LiveCamController::class, 'updateMirrorState'])->name('live-cam.mirror-state');
+
+    // Thumbnail upload
+    Route::post('{stream:slug}/thumbnail', [\App\Http\Controllers\LiveCamController::class, 'uploadThumbnail'])->name('live-cam.thumbnail');
 });
 
 Route::get('sitemap.xml', [IndexController::class, 'sitemap'])->name('sitemap');

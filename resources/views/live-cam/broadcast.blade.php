@@ -50,6 +50,13 @@
                                     <x-gmdi-videocam-off-r class="h-24 w-24 mb-4 opacity-50" />
                                     <p class="text-lg">No camera detected</p>
                                 </div>
+
+                                <!-- Mirror Camera Button (Overlay) -->
+                                <div class="absolute bottom-4 right-4">
+                                    <button id="mirror-camera" class="btn btn-sm btn-circle btn-ghost bg-black/50 text-white hover:bg-black/70" title="Mirror Camera">
+                                        <x-gmdi-flip-r class="h-5 w-5" />
+                                    </button>
+                                </div>
                             </div>
 
                             <!-- Device Selectors -->
@@ -190,10 +197,13 @@
                             <p class="font-semibold">Title:</p>
                             <p>{{ $stream->title }}</p>
                         </div>
-                        @if ($stream->mountain)
+                        @if ($stream->hikingTrail)
                             <div>
-                                <p class="font-semibold">Mountain:</p>
-                                <p>{{ $stream->mountain->nama }}</p>
+                                <p class="font-semibold">Jalur Pendakian:</p>
+                                <p>{{ $stream->hikingTrail->nama }}</p>
+                                @if($stream->hikingTrail->gunung)
+                                    <p class="text-sm text-base-content/70">Gunung: {{ $stream->hikingTrail->gunung->nama }}</p>
+                                @endif
                             </div>
                         @endif
                         @if ($stream->location)
@@ -213,14 +223,16 @@
     </div>
 
     <script>
-        // Configuration for Simple Peer
+        // Configuration for broadcaster
+        window.streamId = {{ $stream->id }};
+        window.streamSlug = "{{ $stream->slug }}";
         window.pusherConfig = {
             key: "{{ config('broadcasting.connections.pusher.key') }}",
             cluster: "{{ config('broadcasting.connections.pusher.options.cluster') }}"
         };
     </script>
 
-    @vite(['resources/js/livecam/broadcaster-ultra-simple.js'])
+    @vite(['resources/js/livecam/broadcaster-mse.js'])
 </body>
 
 </html>

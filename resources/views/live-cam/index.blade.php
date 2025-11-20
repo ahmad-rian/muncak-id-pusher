@@ -30,7 +30,7 @@
             @if ($liveStreams->count() > 0)
                 <div class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3">
                     @foreach ($liveStreams as $stream)
-                        <a href="{{ route('live-cam.show', $stream->id) }}"
+                        <a href="{{ route('live-cam.show', $stream->slug) }}"
                             class="card bg-white shadow-md hover:shadow-lg transition-shadow">
                             <!-- Thumbnail -->
                             <figure class="relative aspect-video bg-black">
@@ -75,10 +75,14 @@
                                     {{ $stream->title }}
                                 </h2>
 
-                                @if ($stream->mountain)
+                                @if ($stream->hikingTrail)
                                     <div class="flex items-center gap-1 text-sm text-base-content/70">
                                         <x-gmdi-terrain-r class="h-4 w-4" />
-                                        <span>{{ $stream->mountain->nama }}</span>
+                                        <span>{{ $stream->hikingTrail->nama }}
+                                            @if($stream->hikingTrail->gunung)
+                                                ({{ $stream->hikingTrail->gunung->nama }})
+                                            @endif
+                                        </span>
                                     </div>
                                 @endif
 
@@ -107,15 +111,131 @@
                     </p>
                 </div>
             @endif
+
+            <!-- Trail Conditions Classification Section -->
+            @if ($recentClassifications->count() > 0)
+                <div class="mt-16" x-data="{
+                    searchTerm: '',
+                    selectedTrailId: '',
+                    classifications: {{ Js::from($recentClassifications->map(function($c) {
+                        return [
+                            'id' => $c->id,
+                            'trail_id' => $c->hiking_trail_id,
+                            'trail_name' => ($c->hikingTrail->nama ?? '') . ' ' . ($c->hikingTrail->gunung->nama ?? '')
+                        ];
+                    })) }}
+                }">
+                    <div class="mb-6">
+                        <h2 class="mb-2 font-merriweather text-3xl font-bold text-base-content">
+                            Kondisi Jalur Pendakian
+                        </h2>
+                        <p class="text-base text-base-content/70">
+                            Laporan kondisi jalur terkini dari live streaming
+                        </p>
+                    </div>
+
+                    <!-- Search and Filter -->
+                    <div class="mb-6 flex flex-col gap-4 md:flex-row md:items-center">
+                        <!-- Search Bar -->
+                        <div class="flex-1">
+                            <label class="input input-bordered flex items-center gap-2">
+                                <x-gmdi-search-r class="h-4 w-4 opacity-70" />
+                                <input type="text"
+                                    x-model="searchTerm"
+                                    placeholder="Cari jalur pendakian..."
+                                    class="grow" />
+                            </label>
+                        </div>
+
+                        <!-- Filter Dropdown -->
+                        <div class="w-full md:w-64">
+                            <select x-model="selectedTrailId" class="select select-bordered w-full">
+                                <option value="">Semua Jalur</option>
+                                @foreach ($availableTrails as $trail)
+                                    <option value="{{ $trail->id }}">
+                                        {{ $trail->nama }}
+                                        @if($trail->gunung)
+                                            ({{ $trail->gunung->nama }})
+                                        @endif
+                                    </option>
+                                @endforeach
+                            </select>
+                        </div>
+                    </div>
+
+                    <div id="classifications-grid" class="grid grid-cols-1 gap-6 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4">
+                        @foreach ($recentClassifications as $classification)
+                            <div class="classification-card card bg-white shadow-md hover:shadow-lg transition-shadow"
+                                x-show="(searchTerm === '' || '{{ strtolower(($classification->hikingTrail->nama ?? '') . ' ' . ($classification->hikingTrail->gunung->nama ?? '')) }}'.includes(searchTerm.toLowerCase())) && (selectedTrailId === '' || selectedTrailId === '{{ $classification->hiking_trail_id }}')"
+                                x-transition>
+                                <!-- Classification Image -->
+                                <figure class="aspect-video bg-black">
+                                    @if ($classification->image_path)
+                                        <img src="{{ asset('storage/' . $classification->image_path) }}"
+                                            alt="Trail condition at {{ $classification->hikingTrail->nama ?? 'Unknown trail' }}"
+                                            class="h-full w-full object-cover">
+                                    @else
+                                        <div class="flex h-full w-full items-center justify-center text-white">
+                                            <x-gmdi-terrain-r class="h-16 w-16" />
+                                        </div>
+                                    @endif
+                                </figure>
+
+                                <!-- Classification Info -->
+                                <div class="card-body p-4">
+                                    <!-- Trail Name -->
+                                    <h3 class="font-semibold text-base text-base-content line-clamp-1">
+                                        @if ($classification->hikingTrail)
+                                            {{ $classification->hikingTrail->nama }}
+                                            @if($classification->hikingTrail->gunung)
+                                                <span class="text-sm text-base-content/60">({{ $classification->hikingTrail->gunung->nama }})</span>
+                                            @endif
+                                        @elseif ($classification->liveStream && $classification->liveStream->hikingTrail)
+                                            {{ $classification->liveStream->hikingTrail->nama }}
+                                            @if($classification->liveStream->hikingTrail->gunung)
+                                                <span class="text-sm text-base-content/60">({{ $classification->liveStream->hikingTrail->gunung->nama }})</span>
+                                            @endif
+                                        @else
+                                            <span class="text-base-content/60">Unknown Trail</span>
+                                        @endif
+                                    </h3>
+
+                                    <!-- Conditions Badges -->
+                                    <div class="flex gap-2 flex-wrap mt-2">
+                                        <div class="badge badge-sm badge-outline gap-1">
+                                            <x-gmdi-wb-sunny-r class="h-3 w-3" />
+                                            {{ $classification->weather_label }}
+                                        </div>
+                                        <div class="badge badge-sm badge-outline gap-1">
+                                            <x-gmdi-group-r class="h-3 w-3" />
+                                            {{ $classification->crowd_label }}
+                                        </div>
+                                        <div class="badge badge-sm badge-outline gap-1">
+                                            <x-gmdi-visibility-r class="h-3 w-3" />
+                                            {{ $classification->visibility_label }}
+                                        </div>
+                                    </div>
+
+                                    <!-- Recommendation -->
+                                    @if ($classification->recommendation)
+                                        <p class="text-sm text-base-content/70 mt-2 line-clamp-2">
+                                            {{ $classification->recommendation }}
+                                        </p>
+                                    @endif
+
+                                    <!-- Timestamp -->
+                                    <div class="mt-3 pt-3 border-t border-base-300">
+                                        <div class="flex items-center gap-1 text-xs text-base-content/60">
+                                            <x-gmdi-schedule-r class="h-3 w-3" />
+                                            <span>{{ $classification->classified_at->timezone('Asia/Jakarta')->format('d M Y, H:i') }} WIB</span>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+                        @endforeach
+                    </div>
+                </div>
+            @endif
         </div>
     </main>
-
-    @push('scripts')
-        <script>
-            // Auto-refresh every 30 seconds
-            setInterval(() => {
-                window.location.reload();
-            }, 30000);
-        </script>
-    @endpush
 </x-layout.app>

@@ -3,7 +3,7 @@
 namespace Database\Seeders;
 
 use App\Models\LiveStream;
-use App\Models\Gunung;
+use App\Models\Rute;
 use App\Models\User;
 use Illuminate\Database\Seeder;
 
@@ -14,35 +14,35 @@ class LiveStreamSeeder extends Seeder
      */
     public function run(): void
     {
-        // Get first mountain and user for demo
-        $mountain = Gunung::first();
+        // Get first hiking trail and user for demo
+        $hikingTrail = Rute::first();
         $user = User::first();
 
         // Create sample live streams
         $streams = [
             [
-                'title' => 'Live from Gunung Semeru Summit',
-                'description' => 'Join us as we climb to the peak of Mount Semeru, the highest mountain in Java!',
-                'mountain_id' => $mountain?->id,
-                'location' => 'Semeru Base Camp, East Java',
+                'title' => 'Live dari Jalur Pendakian Ranu Kumbolo',
+                'description' => 'Saksikan perjalanan kami melalui Ranu Kumbolo menuju puncak Semeru!',
+                'hiking_trail_id' => $hikingTrail?->id,
+                'location' => 'Ranu Kumbolo, Jawa Timur',
                 'broadcaster_id' => $user?->id,
                 'status' => 'offline',
                 'current_quality' => '720p',
             ],
             [
-                'title' => 'Sunrise at Rinjani',
-                'description' => 'Experience the breathtaking sunrise view from Mount Rinjani crater rim.',
-                'mountain_id' => $mountain?->id,
-                'location' => 'Rinjani Crater Rim, Lombok',
+                'title' => 'Sunrise di Jalur Senaru',
+                'description' => 'Nikmati pemandangan matahari terbit dari jalur Senaru, Gunung Rinjani.',
+                'hiking_trail_id' => $hikingTrail?->id,
+                'location' => 'Pos 3 Senaru, Lombok',
                 'broadcaster_id' => $user?->id,
                 'status' => 'offline',
                 'current_quality' => '1080p',
             ],
             [
-                'title' => 'Climbing Gunung Merapi',
-                'description' => 'Live stream from the active volcano - Gunung Merapi expedition.',
-                'mountain_id' => $mountain?->id,
-                'location' => 'Merapi Monitoring Post, Yogyakarta',
+                'title' => 'Pendakian Jalur Selo',
+                'description' => 'Live streaming pendakian Gunung Merapi via jalur Selo - rute klasik yang menantang.',
+                'hiking_trail_id' => $hikingTrail?->id,
+                'location' => 'Basecamp Selo, Boyolali',
                 'broadcaster_id' => $user?->id,
                 'status' => 'offline',
                 'current_quality' => '720p',

@@ -10,6 +10,7 @@ use App\Events\ViewerCountUpdated;
 use App\Models\ChatMessage;
 use App\Models\LiveStream;
 use App\Models\StreamAnalytic;
+use App\Models\TrailClassification;
 use Illuminate\Http\Request;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
@@ -26,7 +27,7 @@ class LiveCamController extends Controller
         // Check if admin is accessing
         if (auth()->check() && auth()->user()->hasRole('admin')) {
             // Admin view - show all streams
-            $streams = LiveStream::with('mountain', 'broadcaster')
+            $streams = LiveStream::with('hikingTrail.gunung', 'broadcaster')
                 ->orderBy('status', 'desc')
                 ->orderBy('created_at', 'desc')
                 ->get();
@@ -34,15 +35,35 @@ class LiveCamController extends Controller
             return view('admin.live-stream.index', compact('streams'));
         }
 
-        // Public view - only show live streams
-        $liveStreams = LiveStream::with('mountain')
+        // Public view - only show live streams with latest classification
+        $liveStreams = LiveStream::with(['hikingTrail.gunung', 'latestClassification'])
             ->live()
             ->orderBy('viewer_count', 'desc')
             ->get();
 
         $totalLive = $liveStreams->count();
 
-        return view('live-cam.index', compact('liveStreams', 'totalLive'));
+        // Get latest classification per trail (one per trail, not multiple)
+        $recentClassifications = TrailClassification::with(['liveStream.hikingTrail.gunung', 'hikingTrail'])
+            ->where('status', 'completed')
+            ->whereNotNull('hiking_trail_id')
+            ->orderBy('classified_at', 'desc')
+            ->get()
+            ->unique('hiking_trail_id') // Only one classification per trail
+            ->take(12);
+
+        // Get all trails that have classifications for filter
+        $availableTrails = TrailClassification::with('hikingTrail.gunung')
+            ->where('status', 'completed')
+            ->whereNotNull('hiking_trail_id')
+            ->get()
+            ->pluck('hikingTrail')
+            ->unique('id')
+            ->filter()
+            ->sortBy('nama')
+            ->values();
+
+        return view('live-cam.index', compact('liveStreams', 'totalLive', 'recentClassifications', 'availableTrails'));
     }
 
     /**
@@ -50,11 +71,11 @@ class LiveCamController extends Controller
      */
     public function create()
     {
-        $mountains = \App\Models\Gunung::with('kabupatenKota.provinsi')
+        $hikingTrails = \App\Models\Rute::with('gunung.kabupatenKota.provinsi')
             ->orderBy('nama')
             ->get();
 
-        return view('admin.live-stream.create', compact('mountains'));
+        return view('admin.live-stream.create', compact('hikingTrails'));
     }
 
     /**
@@ -63,7 +84,7 @@ class LiveCamController extends Controller
     public function store(Request $request)
     {
         $validator = Validator::make($request->all(), [
-            'mountain_id' => 'required|exists:gunung,id',
+            'hiking_trail_id' => 'required|exists:rute,id',
             'title' => 'required|string|max:255',
             'description' => 'nullable|string|max:1000',
             'quality' => 'sometimes|in:360p,720p,1080p',
@@ -76,7 +97,7 @@ class LiveCamController extends Controller
         }
 
         $stream = LiveStream::create([
-            'mountain_id' => $request->mountain_id,
+            'hiking_trail_id' => $request->hiking_trail_id,
             'broadcaster_id' => auth()->id(),
             'title' => $request->title,
             'description' => $request->description,
@@ -85,17 +106,16 @@ class LiveCamController extends Controller
             'viewer_count' => 0,
         ]);
 
-        return redirect()->route('admin.live-stream.broadcast', $stream->id)
+        return redirect()->route('admin.live-stream.broadcast', $stream->slug)
             ->with('success', 'Stream berhasil dibuat! Silakan setup kamera dan mulai siaran.');
     }
 
     /**
      * Show the live stream room
      */
-    public function show($id)
+    public function show(LiveStream $stream)
     {
-        $stream = LiveStream::with(['mountain', 'broadcaster'])
-            ->findOrFail($id);
+        $stream->load(['hikingTrail.gunung', 'broadcaster']);
 
         // Generate anonymous username
         $username = session('livecam_username');
@@ -113,10 +133,9 @@ class LiveCamController extends Controller
     /**
      * Show broadcaster dashboard
      */
-    public function broadcast($id)
+    public function broadcast(LiveStream $stream)
     {
-        $stream = LiveStream::with('mountain')
-            ->findOrFail($id);
+        $stream->load('hikingTrail.gunung');
 
         // Check if user is the broadcaster
         if ($stream->broadcaster_id && $stream->broadcaster_id !== auth()->id()) {
@@ -129,13 +148,11 @@ class LiveCamController extends Controller
     /**
      * Start streaming
      */
-    public function startStream(Request $request, $id)
+    public function startStream(Request $request, LiveStream $stream)
     {
         if (!auth()->check()) {
             return response()->json(['error' => 'Unauthorized'], 401);
         }
-
-        $stream = LiveStream::findOrFail($id);
 
         // Check if user is the broadcaster
         if ($stream->broadcaster_id && $stream->broadcaster_id !== auth()->id()) {
@@ -149,6 +166,9 @@ class LiveCamController extends Controller
         if ($validator->fails()) {
             return response()->json(['errors' => $validator->errors()], 422);
         }
+
+        // Clear chat history for new stream session
+        ChatMessage::where('live_stream_id', $stream->id)->delete();
 
         $stream->update([
             'status' => 'live',
@@ -170,13 +190,11 @@ class LiveCamController extends Controller
     /**
      * Stop streaming
      */
-    public function stopStream(Request $request, $id)
+    public function stopStream(Request $request, LiveStream $stream)
     {
         if (!auth()->check()) {
             return response()->json(['error' => 'Unauthorized'], 401);
         }
-
-        $stream = LiveStream::findOrFail($id);
 
         // Check if user is the broadcaster
         if ($stream->broadcaster_id && $stream->broadcaster_id !== auth()->id()) {
@@ -194,7 +212,7 @@ class LiveCamController extends Controller
 
         // Clean up Redis viewer tracking
         try {
-            Redis::del('stream:' . $id . ':viewers');
+            Redis::del('stream:' . $stream->id . ':viewers');
         } catch (\Exception $e) {
             // Ignore Redis errors
         }
@@ -208,7 +226,7 @@ class LiveCamController extends Controller
     /**
      * Send chat message
      */
-    public function sendChat(Request $request, $id)
+    public function sendChat(Request $request, LiveStream $stream)
     {
         $validator = Validator::make($request->all(), [
             'username' => 'required|string|max:50',
@@ -219,7 +237,7 @@ class LiveCamController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        $stream = LiveStream::findOrFail($id);
+        $id = $stream->id;
 
         if (!$stream->isLive()) {
             return response()->json(['error' => 'Stream is not live'], 400);
@@ -274,11 +292,32 @@ class LiveCamController extends Controller
     }
 
     /**
+     * Get chat history for stream
+     */
+    public function getChatHistory(LiveStream $stream)
+    {
+        $messages = ChatMessage::where('live_stream_id', $stream->id)
+            ->orderBy('created_at', 'asc')
+            ->get()
+            ->map(function ($msg) {
+                return [
+                    'username' => $msg->username,
+                    'message' => $msg->message,
+                    'timestamp' => $msg->created_at->toIso8601String(),
+                ];
+            });
+
+        return response()->json([
+            'success' => true,
+            'messages' => $messages,
+        ]);
+    }
+
+    /**
      * Get recommended quality based on viewer count
      */
-    public function getQuality($id)
+    public function getQuality(LiveStream $stream)
     {
-        $stream = LiveStream::findOrFail($id);
 
         $viewerCount = $stream->viewer_count;
 
@@ -302,9 +341,9 @@ class LiveCamController extends Controller
     /**
      * Update viewer count
      */
-    public function updateViewerCount(Request $request, $id)
+    public function updateViewerCount(Request $request, LiveStream $stream)
     {
-        $stream = LiveStream::findOrFail($id);
+        $id = $stream->id;
 
         // Support both action-based and count-based updates
         if ($request->has('action')) {
@@ -371,7 +410,7 @@ class LiveCamController extends Controller
     /**
      * Change stream quality
      */
-    public function changeQuality(Request $request, $id)
+    public function changeQuality(Request $request, LiveStream $stream)
     {
         if (!auth()->check()) {
             return response()->json(['error' => 'Unauthorized'], 401);
@@ -385,8 +424,6 @@ class LiveCamController extends Controller
             return response()->json(['errors' => $validator->errors()], 422);
         }
 
-        $stream = LiveStream::findOrFail($id);
-
         // Check if user is the broadcaster
         if ($stream->broadcaster_id && $stream->broadcaster_id !== auth()->id()) {
             return response()->json(['error' => 'Unauthorized'], 403);
@@ -396,7 +433,7 @@ class LiveCamController extends Controller
         $stream->update(['current_quality' => $quality]);
 
         // Broadcast quality change
-        broadcast(new QualityChanged($id, $quality))->toOthers();
+        broadcast(new QualityChanged($stream->id, $quality))->toOthers();
 
         return response()->json([
             'success' => true,
@@ -425,16 +462,97 @@ class LiveCamController extends Controller
             ]
         );
 
-        return redirect()->route('live-cam.broadcast', $stream->id);
+        return redirect()->route('live-cam.broadcast', $stream->slug);
+    }
+
+    /**
+     * Update mirror state and broadcast to viewers
+     */
+    public function updateMirrorState(Request $request, LiveStream $stream)
+    {
+        $validator = Validator::make($request->all(), [
+            'is_mirrored' => 'required|boolean',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        // Broadcast mirror state to viewers
+        broadcast(new \App\Events\MirrorStateChanged($stream->id, $request->input('is_mirrored')));
+
+        return response()->json([
+            'success' => true,
+            'is_mirrored' => $request->input('is_mirrored')
+        ]);
+    }
+
+    /**
+     * Upload thumbnail for stream (captured once at start)
+     */
+    public function uploadThumbnail(Request $request, LiveStream $stream)
+    {
+        $validator = Validator::make($request->all(), [
+            'image' => 'required|string',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        try {
+            // Decode base64 image
+            $imageData = $request->input('image');
+
+            // Remove data URL prefix if present
+            if (preg_match('/^data:image\/(\w+);base64,/', $imageData, $matches)) {
+                $extension = $matches[1];
+                $imageData = substr($imageData, strpos($imageData, ',') + 1);
+            } else {
+                $extension = 'jpeg';
+            }
+
+            $decodedImage = base64_decode($imageData);
+
+            if ($decodedImage === false) {
+                return response()->json(['error' => 'Invalid image data'], 400);
+            }
+
+            // Save thumbnail
+            $filename = 'stream_' . $stream->id . '_thumb.' . $extension;
+            $path = 'thumbnails/' . $filename;
+
+            // Store in public disk
+            \Storage::disk('public')->put($path, $decodedImage);
+
+            // Update stream with thumbnail URL
+            $stream->update([
+                'thumbnail_url' => asset('storage/' . $path)
+            ]);
+
+            return response()->json([
+                'success' => true,
+                'thumbnail_url' => asset('storage/' . $path)
+            ]);
+
+        } catch (\Exception $e) {
+            \Log::error('Thumbnail upload failed', [
+                'stream_id' => $id,
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => $e->getMessage()
+            ], 500);
+        }
     }
 
     /**
      * Delete a stream (admin only)
      */
-    public function destroy($id)
+    public function destroy(LiveStream $stream)
     {
-        $stream = LiveStream::findOrFail($id);
-
         // Stop stream if it's live
         if ($stream->isLive()) {
             $stream->update([
@@ -457,9 +575,8 @@ class LiveCamController extends Controller
     /**
      * Viewer signals they are ready for WebRTC connection
      */
-    public function viewerReady(Request $request, $id)
+    public function viewerReady(Request $request, LiveStream $stream)
     {
-        $stream = LiveStream::findOrFail($id);
 
         $viewerId = $request->input('viewer_id');
 
@@ -489,9 +606,8 @@ class LiveCamController extends Controller
     /**
      * Send WebRTC signal between broadcaster and viewer
      */
-    public function sendSignal(Request $request, $id)
+    public function sendSignal(Request $request, LiveStream $stream)
     {
-        $stream = LiveStream::findOrFail($id);
 
         $viewerId = $request->input('viewer_id');
         $signal = $request->input('signal');
@@ -750,13 +866,11 @@ class LiveCamController extends Controller
     /**
      * Upload video chunk from broadcaster (MSE streaming)
      */
-    public function uploadChunk(Request $request, $id)
+    public function uploadChunk(Request $request, LiveStream $stream)
     {
         if (!auth()->check()) {
             return response()->json(['error' => 'Unauthorized'], 401);
         }
-
-        $stream = LiveStream::findOrFail($id);
 
         // Check if user is the broadcaster
         if ($stream->broadcaster_id && $stream->broadcaster_id !== auth()->id()) {
@@ -778,7 +892,7 @@ class LiveCamController extends Controller
             $chunkFile = $request->file('chunk');
 
             // Create stream directory
-            $streamDir = storage_path("app/live-streams/{$id}");
+            $streamDir = storage_path("app/live-streams/{$stream->id}");
             if (!file_exists($streamDir)) {
                 mkdir($streamDir, 0755, true);
             }
@@ -788,18 +902,18 @@ class LiveCamController extends Controller
             $chunkFile->move($streamDir, "chunk_{$chunkIndex}.webm");
 
             Log::info("Chunk uploaded", [
-                'stream_id' => $id,
+                'stream_id' => $stream->id,
                 'index' => $chunkIndex,
                 'size' => filesize($chunkPath)
             ]);
 
             // Notify viewers via Pusher
-            event(new \App\Events\NewChunk($id, $chunkIndex));
+            event(new \App\Events\NewChunk($stream->id, $chunkIndex));
 
             // Clean up old chunks (keep last 20 chunks = ~40 seconds with 2s chunks)
             // Only start cleaning after we have enough chunks
             if ($chunkIndex > 20) {
-                $this->cleanupOldChunks($id, $chunkIndex - 20);
+                $this->cleanupOldChunks($stream->id, $chunkIndex - 20);
             }
 
             return response()->json([
@@ -810,7 +924,7 @@ class LiveCamController extends Controller
 
         } catch (\Exception $e) {
             Log::error("Chunk upload failed", [
-                'stream_id' => $id,
+                'stream_id' => $stream->id,
                 'error' => $e->getMessage()
             ]);
 
@@ -823,11 +937,9 @@ class LiveCamController extends Controller
     /**
      * Serve video chunk to viewer
      */
-    public function getChunk($id, $index)
+    public function getChunk(LiveStream $stream, $index)
     {
-        $stream = LiveStream::findOrFail($id);
-
-        $chunkPath = storage_path("app/live-streams/{$id}/chunk_{$index}.webm");
+        $chunkPath = storage_path("app/live-streams/{$stream->id}/chunk_{$index}.webm");
 
         if (!file_exists($chunkPath)) {
             return response('', 404);
@@ -844,10 +956,8 @@ class LiveCamController extends Controller
     /**
      * Get stream status
      */
-    public function getStatus($id)
+    public function getStatus(LiveStream $stream)
     {
-        $stream = LiveStream::findOrFail($id);
-
         return response()->json([
             'is_live' => $stream->isLive(),
             'status' => $stream->status,
