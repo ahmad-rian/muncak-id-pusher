@@ -2,9 +2,17 @@
 
   <x-slot:title>Rencanakan Destinasi Pendakianmu</x-slot:title>
 
-  <header class="relative flex h-96 flex-col justify-center bg-cover bg-center pb-5"
-    style="background-image: url('https://images.unsplash.com/photo-1604143055124-a0130cc54faf?q=65&w=1600&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D')">
-    <div class="container relative mx-auto max-w-screen-lg bg-cover bg-center px-4 pt-20 md:px-6 lg:px-8 xl:px-12">
+  <header class="relative flex h-96 flex-col justify-center overflow-hidden pb-5">
+    <!-- Hero Image (LCP Element) -->
+    <img
+      src="https://images.unsplash.com/photo-1604143055124-a0130cc54faf?q=65&w=1600&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D"
+      alt="Mountain landscape" class="absolute inset-0 h-full w-full object-cover object-center" fetchpriority="high"
+      width="1600" height="384">
+
+    <!-- Overlay for better text readability -->
+    <div class="absolute inset-0 bg-black/20"></div>
+
+    <div class="container relative z-10 mx-auto max-w-screen-lg px-4 pt-20 md:px-6 lg:px-8 xl:px-12">
       <div class="mx-auto mt-2 rounded-lg p-4 text-center">
         <h1 class="px-4 font-merriweather text-4xl font-extrabold text-white md:text-5xl">MUNCAK.ID</h1>
         <h2 class="mt-3 text-lg text-gray-200">
