@@ -88,25 +88,24 @@
                         <div class="dropdown dropdown-end">
                             <div class="avatar btn btn-circle btn-ghost" tabindex="0" role="button">
                                 <div class="w-10 rounded-full">
-                                    <img alt="{{ "@{$user->username} Photo Profile" }}"
-                                        src="{{ $user->getAvatarUrl() }}" />
+                                    <img alt="{{ "@{$user->username} Photo Profile" }}" src="{{ $user->getAvatarUrl() }}" />
                                 </div>
                             </div>
                             <ul class="menu dropdown-content menu-sm z-[1] mt-3 w-52 rounded-box bg-base-100 p-2 shadow"
                                 tabindex="0">
                                 @role('admin')
-                                    <li>
-                                        <a href="{{ route('index') }}">
-                                            <x-gmdi-desktop-windows-r class="size-4" />
-                                            App
-                                        </a>
-                                    </li>
-                                    <li>
-                                        <a href="{{ route('admin.dashboard.index') }}">
-                                            <x-gmdi-admin-panel-settings-r class="size-4" />
-                                            Admin
-                                        </a>
-                                    </li>
+                                <li>
+                                    <a href="{{ route('index') }}">
+                                        <x-gmdi-desktop-windows-r class="size-4" />
+                                        App
+                                    </a>
+                                </li>
+                                <li>
+                                    <a href="{{ route('admin.dashboard.index') }}">
+                                        <x-gmdi-admin-panel-settings-r class="size-4" />
+                                        Admin
+                                    </a>
+                                </li>
                                 @endrole
                                 <li>
                                     <a href="{{ route('index') }}">
@@ -133,8 +132,7 @@
                                     </a>
                                 </li>
                                 <li>
-                                    <form class="flex items-stretch" method="POST"
-                                        action="{{ route('auth.sign-out') }}">
+                                    <form class="flex items-stretch" method="POST" action="{{ route('auth.sign-out') }}">
                                         @csrf
                                         <button class="flex w-full items-center gap-x-2" type="submit">
                                             <x-gmdi-exit-to-app-r class="size-4" />
@@ -239,10 +237,11 @@
         </div>
     </footer>
 
-    <script src="{{ asset('js/jquery-3.7.1.min.js') }}"></script>
-    <script src="{{ asset('js/chart.min.js') }}"></script>
-    <script src="{{ asset('js/chart-plugin-datalabels.min.js') }}"></script>
-    <script src="{{ asset('js/lodash.min.js') }}"></script>
+    <!-- Defer heavy libraries to not block rendering -->
+    <script defer src="{{ asset('js/jquery-3.7.1.min.js') }}"></script>
+    <script defer src="{{ asset('js/chart.min.js') }}"></script>
+    <script defer src="{{ asset('js/chart-plugin-datalabels.min.js') }}"></script>
+    <script defer src="{{ asset('js/lodash.min.js') }}"></script>
 
     <x-toast></x-toast>
 
@@ -263,15 +262,17 @@
                     document.documentElement.setAttribute('data-theme', this.theme);
                     document.documentElement.classList.toggle('dark', this.theme === 'dark-winter');
 
-                    $.ajax({
-                        url: "{{ route('user.toggle-theme') }}",
+                    // Use fetch instead of jQuery to avoid dependency
+                    fetch("{{ route('user.toggle-theme') }}", {
                         method: 'POST',
-                        contentType: 'application/json',
-                        data: JSON.stringify({
-                            _token: $('meta[name="csrf-token"]').attr('content'),
+                        headers: {
+                            'Content-Type': 'application/json',
+                            'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
+                        },
+                        body: JSON.stringify({
                             theme: this.theme
-                        }),
-                    });
+                        })
+                    }).catch(err => console.error('Theme toggle failed:', err));
                 },
             }
         }

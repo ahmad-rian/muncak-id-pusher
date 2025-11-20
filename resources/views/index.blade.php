@@ -29,7 +29,14 @@
   </header>
 
   <x-slot:head>
-    <link rel="preload" as="image" href="https://images.unsplash.com/photo-1604143055124-a0130cc54faf?q=65&w=1600&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D">
+    <!-- Preconnect to Unsplash for faster image loading -->
+    <link rel="preconnect" href="https://images.unsplash.com">
+    <link rel="dns-prefetch" href="https://images.unsplash.com">
+
+    <!-- Preload hero image (LCP element) -->
+    <link rel="preload" as="image"
+      href="https://images.unsplash.com/photo-1604143055124-a0130cc54faf?q=65&w=1600&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D"
+      fetchpriority="high">
   </x-slot:head>
 
   <section class="container relative mx-auto px-4 py-12 md:px-6 lg:px-8 xl:px-12 2xl:px-16">
@@ -57,8 +64,7 @@
             </select>
             <div class="join w-full grow md:w-auto">
               <label class="input join-item input-bordered flex grow items-center gap-2">
-                <input class="grow" type="text" name="q" placeholder="Cari destinasi pendakianmu"
-                  value="{{ $q }}" />
+                <input class="grow" type="text" name="q" placeholder="Cari destinasi pendakianmu" value="{{ $q }}" />
               </label>
               <button class="btn join-item btn-neutral cursor-pointer border" type="submit">
                 <x-gmdi-search-r class="size-6 opacity-70" />
@@ -73,7 +79,8 @@
           <a class="group card-compact block" href="{{ $item->path }}">
             <figure>
               <img class="h-48 w-full rounded-box object-cover object-center" src="{{ $item->image }}"
-                alt="{{ 'jalur-pendakian' }}" />
+                alt="{{ 'jalur-pendakian' }}" loading="{{ $loop->index < 4 ? 'eager' : 'lazy' }}" width="400"
+                height="192" />
             </figure>
             <div class="card-body !px-0">
               <div>
@@ -142,13 +149,13 @@
         <div class="grid grid-cols-2 gap-4">
           <img class="row-span-2 h-[21rem] w-full rounded-md object-cover object-center"
             src="https://images.unsplash.com/photo-1633512424789-9ad3655bec31?q=80&w=3264&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D"
-            alt="tentang-1">
+            alt="tentang-1" loading="lazy" width="800" height="672">
           <img class="h-40 w-full rounded-md object-cover object-center"
             src="https://images.unsplash.com/photo-1671965448417-0582cb361168?q=80&w=3270&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D"
-            alt="tentang-w">
+            alt="tentang-2" loading="lazy" width="400" height="160">
           <img class="h-40 w-full rounded-md object-cover object-center"
             src="https://images.unsplash.com/photo-1476158085676-e67f57ed9ed7?q=80&w=2800&auto=format&fit=crop&ixlib=rb-4.0.3&ixid=M3wxMjA3fDB8MHxwaG90by1wYWdlfHx8fGVufDB8fHx8fA%3D%3D"
-            alt="tentang-3">
+            alt="tentang-3" loading="lazy" width="400" height="160">
         </div>
         <div>
           <p class="font-merriweather text-2xl font-semibold lg:text-3xl">Tentang</p>
