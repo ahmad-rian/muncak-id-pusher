@@ -56,14 +56,14 @@ channel.bind('new-chunk', (data) => {
 });
 
 // Listen for stream status changes
-channel.bind('stream-started', () => {
+channel.bind('stream-started', async () => {
     console.log('🎬 Stream started - cleaning up old stream data');
 
     // Stop any ongoing fetches
     isStreamActive = false;
 
-    // Complete cleanup of old MediaSource and buffers
-    cleanupMediaSource();
+    // Complete cleanup of old MediaSource and buffers (async)
+    await cleanupMediaSource();
 
     // Reset all state
     lastChunkIndex = -1;
@@ -114,7 +114,7 @@ channel.bind('App\\Events\\MirrorStateChanged', (data) => {
 });
 
 // Cleanup MediaSource
-function cleanupMediaSource() {
+async function cleanupMediaSource() {
     console.log('🧹 Cleaning up MediaSource...');
 
     // Stop fetch interval
@@ -129,15 +129,27 @@ function cleanupMediaSource() {
     isFetchingChunk = false;
     pendingChunks.clear();
 
-    // Remove SourceBuffer event listeners to prevent memory leaks
+    // Remove SourceBuffer event listeners and buffered data
     if (sourceBuffer) {
         try {
+            // Wait for any pending updates to complete
+            if (sourceBuffer.updating) {
+                await new Promise(resolve => {
+                    sourceBuffer.addEventListener('updateend', resolve, { once: true });
+                });
+            }
+
             // Remove all buffered data
-            if (sourceBuffer.buffered.length > 0 && !sourceBuffer.updating) {
+            if (sourceBuffer.buffered.length > 0) {
                 const start = sourceBuffer.buffered.start(0);
                 const end = sourceBuffer.buffered.end(sourceBuffer.buffered.length - 1);
                 sourceBuffer.remove(start, end);
-                console.log('🗑️ Removed buffered data from', start, 'to', end);
+                console.log('🗑️ Removing buffered data from', start, 'to', end);
+
+                // Wait for remove operation to complete
+                await new Promise(resolve => {
+                    sourceBuffer.addEventListener('updateend', resolve, { once: true });
+                });
             }
         } catch (err) {
             console.log('Could not remove buffer:', err.message);
@@ -148,12 +160,10 @@ function cleanupMediaSource() {
     if (mediaSource) {
         try {
             if (mediaSource.readyState === 'open') {
-                if (sourceBuffer && !sourceBuffer.updating) {
-                    mediaSource.endOfStream();
-                }
+                mediaSource.endOfStream();
             }
         } catch (err) {
-            console.log('MediaSource already closed');
+            console.log('MediaSource already closed:', err.message);
         }
         mediaSource = null;
         sourceBuffer = null;
@@ -203,14 +213,27 @@ function initializeMediaSource() {
                 processQueue();
             });
 
-            sourceBuffer.addEventListener('error', (e) => {
+            sourceBuffer.addEventListener('error', async (e) => {
                 console.error('❌ SourceBuffer error:', e);
                 sbErrorRetries += 1;
-                cleanupMediaSource();
-                if (sbErrorRetries <= 3) {
-                    initializeMediaSource();
+
+                // Cleanup properly (async)
+                await cleanupMediaSource();
+
+                // Retry with exponential backoff
+                if (sbErrorRetries <= 3 && isStreamActive) {
+                    const delay = Math.pow(2, sbErrorRetries - 1) * 1000; // 1s, 2s, 4s
+                    console.log(`🔄 Retrying MediaSource initialization in ${delay}ms (attempt ${sbErrorRetries}/3)`);
+                    setTimeout(() => {
+                        if (isStreamActive) {
+                            initializeMediaSource();
+                        }
+                    }, delay);
                 } else {
+                    console.error('❌ Too many SourceBuffer errors, stopping stream');
                     isStreamActive = false;
+                    if (loading) loading.classList.add('hidden');
+                    if (offline) offline.classList.remove('hidden');
                 }
             });
 
@@ -390,17 +413,6 @@ function processQueue() {
         sourceBuffer.appendBuffer(chunk.data);
         console.log(`✅ Appended chunk ${chunk.index}`);
 
-        // Check if we need to skip to live position after init segment
-        if (chunk.index === 0 && window.targetLiveChunk && window.targetLiveChunk > 0) {
-            console.log(`⏩ Skipping to live position: chunk ${window.targetLiveChunk}`);
-            // Jump to target chunk
-            lastChunkIndex = window.targetLiveChunk - 1;
-            // Clear target so we don't skip again
-            window.targetLiveChunk = null;
-            // Fetch the target chunk immediately
-            setTimeout(() => fetchAndAppendChunk(lastChunkIndex + 1), 100);
-        }
-
         // Auto-play as soon as possible
         if (video.paused) {
             // Try to play immediately after any chunk is appended
@@ -446,35 +458,10 @@ async function checkStreamStatus() {
         if (data.is_live) {
             console.log('🟢 Stream is live');
 
-            // Get latest chunk index to determine strategy
-            const latestChunkIndex = data.latest_chunk_index || -1;
-
-            if (latestChunkIndex >= 0) {
-                // Calculate target chunk (latest - 2 for buffer)
-                const targetChunkIndex = Math.max(0, latestChunkIndex - 2);
-
-                if (targetChunkIndex > 0) {
-                    // Stream has been running, need to fetch chunk 0 first (initialization segment)
-                    // Then skip to target chunk
-                    console.log(`📍 Stream in progress. Will fetch chunk 0 (init), then jump to chunk ${targetChunkIndex} (latest: ${latestChunkIndex})`);
-
-                    // Store target chunk for later
-                    window.targetLiveChunk = targetChunkIndex;
-
-                    // Start from -1 so first fetch is chunk 0
-                    lastChunkIndex = -1;
-                } else {
-                    // Stream just started, play from beginning
-                    console.log('📍 Starting from chunk 0 (stream just started)');
-                    lastChunkIndex = -1;
-                    window.targetLiveChunk = null;
-                }
-            } else {
-                // No chunks yet, start from beginning
-                lastChunkIndex = -1;
-                window.targetLiveChunk = null;
-                console.log('📍 Starting from chunk 0 (no chunks available yet)');
-            }
+            // Always start from chunk 0 (initialization segment)
+            // This ensures proper video stream continuity
+            lastChunkIndex = -1;
+            console.log('📍 Starting from chunk 0');
 
             isStreamActive = true;
             initializeMediaSource();
