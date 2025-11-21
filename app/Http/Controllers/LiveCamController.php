@@ -585,9 +585,8 @@ class LiveCamController extends Controller
             // Store in public disk
             \Storage::disk('public')->put($path, $decodedImage);
 
-            // Update stream with thumbnail URL
             $stream->update([
-                'thumbnail_url' => asset('storage/' . $path)
+                'thumbnail_url' => asset('storage/' . $path) . '?v=' . time()
             ]);
 
             return response()->json([
