@@ -193,6 +193,8 @@ class LiveCamController extends Controller
      */
     public function stopStream(Request $request, LiveStream $stream)
     {
+        \Log::info('Stop stream request received', ['stream_id' => $stream->id]);
+
         if (!auth()->check()) {
             return response()->json(['error' => 'Unauthorized'], 401);
         }
@@ -203,15 +205,29 @@ class LiveCamController extends Controller
         }
 
         try {
-            $stream->update([
-                'status' => 'offline',
-                'ended_at' => now(),
-                'viewer_count' => 0,
-            ]);
+            \Log::info('Updating stream status to offline', ['stream_id' => $stream->id]);
+
+            // Update stream status
+            try {
+                $stream->update([
+                    'status' => 'offline',
+                    'ended_at' => now(),
+                    'viewer_count' => 0,
+                ]);
+                \Log::info('Stream status updated successfully', ['stream_id' => $stream->id]);
+            } catch (\Exception $e) {
+                \Log::error('Failed to update stream status', [
+                    'stream_id' => $stream->id,
+                    'error' => $e->getMessage()
+                ]);
+                throw $e; // Re-throw to be caught by outer try-catch
+            }
 
             // Broadcast stream ended event
             try {
+                \Log::info('Broadcasting stream ended event', ['stream_id' => $stream->id]);
                 broadcast(new StreamEnded($stream))->toOthers();
+                \Log::info('Stream ended event broadcasted successfully', ['stream_id' => $stream->id]);
             } catch (\Exception $e) {
                 \Log::error('Failed to broadcast stream ended event', [
                     'stream_id' => $stream->id,
@@ -222,14 +238,22 @@ class LiveCamController extends Controller
 
             // Clean up Redis viewer tracking
             try {
+                \Log::info('Cleaning up Redis viewer tracking', ['stream_id' => $stream->id]);
                 Redis::del('stream:' . $stream->id . ':viewers');
+                \Log::info('Redis cleanup completed', ['stream_id' => $stream->id]);
             } catch (\Exception $e) {
-                // Ignore Redis errors
+                \Log::error('Failed to cleanup Redis', [
+                    'stream_id' => $stream->id,
+                    'error' => $e->getMessage()
+                ]);
+                // Continue even if Redis cleanup fails
             }
 
             // Clean up chunks
             try {
+                \Log::info('Cleaning up chunks', ['stream_id' => $stream->id]);
                 $this->cleanupAllChunks($stream->id);
+                \Log::info('Chunks cleanup completed', ['stream_id' => $stream->id]);
             } catch (\Exception $e) {
                 \Log::error('Failed to cleanup chunks', [
                     'stream_id' => $stream->id,
@@ -237,6 +261,8 @@ class LiveCamController extends Controller
                 ]);
                 // Continue even if cleanup fails
             }
+
+            \Log::info('Stop stream completed successfully', ['stream_id' => $stream->id]);
 
             return response()->json([
                 'success' => true,
