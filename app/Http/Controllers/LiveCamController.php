@@ -202,28 +202,58 @@ class LiveCamController extends Controller
             return response()->json(['error' => 'Unauthorized'], 403);
         }
 
-        $stream->update([
-            'status' => 'offline',
-            'ended_at' => now(),
-            'viewer_count' => 0,
-        ]);
-
-        // Broadcast stream ended event
-        broadcast(new StreamEnded($stream))->toOthers();
-
-        // Clean up Redis viewer tracking
         try {
-            Redis::del('stream:' . $stream->id . ':viewers');
+            $stream->update([
+                'status' => 'offline',
+                'ended_at' => now(),
+                'viewer_count' => 0,
+            ]);
+
+            // Broadcast stream ended event
+            try {
+                broadcast(new StreamEnded($stream))->toOthers();
+            } catch (\Exception $e) {
+                \Log::error('Failed to broadcast stream ended event', [
+                    'stream_id' => $stream->id,
+                    'error' => $e->getMessage()
+                ]);
+                // Continue even if broadcast fails
+            }
+
+            // Clean up Redis viewer tracking
+            try {
+                Redis::del('stream:' . $stream->id . ':viewers');
+            } catch (\Exception $e) {
+                // Ignore Redis errors
+            }
+
+            // Clean up chunks
+            try {
+                $this->cleanupAllChunks($stream->id);
+            } catch (\Exception $e) {
+                \Log::error('Failed to cleanup chunks', [
+                    'stream_id' => $stream->id,
+                    'error' => $e->getMessage()
+                ]);
+                // Continue even if cleanup fails
+            }
+
+            return response()->json([
+                'success' => true,
+                'stream' => $stream,
+            ]);
         } catch (\Exception $e) {
-            // Ignore Redis errors
+            \Log::error('Failed to stop stream', [
+                'stream_id' => $stream->id,
+                'error' => $e->getMessage(),
+                'trace' => $e->getTraceAsString()
+            ]);
+
+            return response()->json([
+                'error' => 'Failed to stop stream',
+                'message' => $e->getMessage()
+            ], 500);
         }
-
-        $this->cleanupAllChunks($stream->id);
-
-        return response()->json([
-            'success' => true,
-            'stream' => $stream,
-        ]);
     }
 
     /**

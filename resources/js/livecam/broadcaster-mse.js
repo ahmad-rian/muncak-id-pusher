@@ -344,8 +344,15 @@ async function stopStream() {
             headers: {
                 'Content-Type': 'application/json',
                 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
-            }
+            },
+            body: JSON.stringify({}) // Send empty JSON body
         });
+
+        if (!response.ok) {
+            const errorText = await response.text();
+            console.error('❌ Stop stream failed:', response.status, errorText);
+            throw new Error(`HTTP ${response.status}: ${errorText.substring(0, 100)}`);
+        }
 
         const data = await response.json();
 
@@ -364,9 +371,12 @@ async function stopStream() {
                 statusBadge.classList.remove('badge-success');
                 statusBadge.classList.add('badge-error');
             }
+        } else {
+            console.error('❌ Stop stream failed:', data.error || data.message);
         }
     } catch (err) {
         console.error('❌ Stop stream error:', err);
+        alert('Failed to stop stream. Please try again or refresh the page.');
     }
 }
 
