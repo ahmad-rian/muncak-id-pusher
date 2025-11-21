@@ -21,6 +21,7 @@ class AppServiceProvider extends ServiceProvider
      */
     public function boot(): void
     {
+        config(['media-library.temporary_upload_model' => null]);
         RedirectIfAuthenticated::redirectUsing(fn() => route('index'));
         Authenticate::redirectUsing(fn() => route('auth.sign-in'));
     }

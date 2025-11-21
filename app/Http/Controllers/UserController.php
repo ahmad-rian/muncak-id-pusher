@@ -263,6 +263,8 @@ class UserController extends Controller
      */
     public function createPhotoProfile($user)
     {
+        config(['media-library.temporary_upload_model' => null]);
+
         $parts    = explode(' ', string: $user->name);
         $initials = '';
 
@@ -290,7 +292,9 @@ class UserController extends Controller
         $encodedImage = $img->encodeByExtension('png');
         Storage::put($filePath, $encodedImage);
 
-        $user->addMedia(storage_path("app/private/$filePath"))->toMediaCollection('photo-profile');
+        if (!$user->getFirstMedia('photo-profile')) {
+            $user->addMedia(storage_path("app/private/$filePath"))->toMediaCollection('photo-profile');
+        }
 
         Storage::delete($filePath);
     }
