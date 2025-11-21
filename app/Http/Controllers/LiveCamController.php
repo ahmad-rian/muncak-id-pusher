@@ -276,9 +276,10 @@ class LiveCamController extends Controller
             ]);
 
             return response()->json([
+                'success' => false,
                 'error' => 'Failed to stop stream',
                 'message' => $e->getMessage()
-            ], 500);
+            ]);
         }
     }
 

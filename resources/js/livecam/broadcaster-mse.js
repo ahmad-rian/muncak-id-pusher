@@ -13,6 +13,7 @@ let chunkCounter = 0;
 let isMirrored = false;
 let streamStartTime = null;
 let durationInterval = null;
+let thumbnailInterval = null;
 
 // Pusher configuration
 const pusher = new Pusher(window.pusherConfig.key, {

@@ -152,7 +152,6 @@ class TrailClassificationController extends Controller
                     ]
                 ]);
             } else {
-                // Classification failed
                 $classification->update([
                     'status' => 'failed',
                     'error_message' => 'Gemini AI classification failed',
@@ -162,7 +161,7 @@ class TrailClassificationController extends Controller
                 return response()->json([
                     'success' => false,
                     'message' => 'Classification failed'
-                ], 500);
+                ]);
             }
 
         } catch (\Exception $e) {
@@ -174,7 +173,7 @@ class TrailClassificationController extends Controller
             return response()->json([
                 'success' => false,
                 'message' => 'Processing error: ' . $e->getMessage()
-            ], 500);
+            ]);
         }
     }
 
