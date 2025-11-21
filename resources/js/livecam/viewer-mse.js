@@ -267,7 +267,9 @@ function startFetching() {
     }
 
     // Polling fallback: check for next chunk if Pusher event is missed
-    // This ensures we don't miss chunks even if network is slow
+    // Use faster polling during catch-up phase
+    const pollingInterval = window.shouldSeekToLive ? 800 : 2500; // 800ms when catching up, 2.5s normally
+
     fetchInterval = setInterval(() => {
         if (!isStreamActive || !mediaSource || mediaSource.readyState !== 'open') {
             clearInterval(fetchInterval);
@@ -280,7 +282,23 @@ function startFetching() {
         if (!pendingChunks.has(nextIndex)) {
             fetchAndAppendChunk(nextIndex);
         }
-    }, 2500); // Poll every 2.5 seconds (backup mechanism)
+    }, pollingInterval);
+
+    // During catch-up, aggressively fetch multiple chunks ahead
+    if (window.shouldSeekToLive) {
+        console.log('🚀 Catch-up mode: fetching multiple chunks in parallel');
+        // Fetch next 3 chunks immediately (after chunk 0)
+        setTimeout(() => {
+            if (lastChunkIndex >= 0 && window.shouldSeekToLive) {
+                for (let i = 1; i <= 3; i++) {
+                    const nextIdx = lastChunkIndex + i;
+                    if (!pendingChunks.has(nextIdx)) {
+                        fetchAndAppendChunk(nextIdx);
+                    }
+                }
+            }
+        }, 500);
+    }
 }
 
 // Fetch and append chunk
@@ -427,6 +445,23 @@ function processQueue() {
             });
         }
 
+        // Seek to live position if needed
+        if (window.shouldSeekToLive && video.buffered.length > 0) {
+            const bufferEnd = video.buffered.end(0);
+
+            // Wait until we have at least 10 seconds of buffer (or enough chunks)
+            // Each chunk is ~2 seconds, so 5 chunks = 10 seconds
+            if (chunk.index >= 5 && bufferEnd >= 8) {
+                // Seek to near the end of buffer (leave 2 seconds for safety)
+                const targetTime = Math.max(0, bufferEnd - 2);
+                console.log(`⏩ Seeking to live position: ${targetTime.toFixed(1)}s (buffer end: ${bufferEnd.toFixed(1)}s)`);
+                video.currentTime = targetTime;
+
+                // Clear flag so we don't seek again
+                window.shouldSeekToLive = false;
+            }
+        }
+
         // Monitor buffer health
         if (video.buffered.length > 0) {
             const bufferEnd = video.buffered.end(0);
@@ -458,10 +493,26 @@ async function checkStreamStatus() {
         if (data.is_live) {
             console.log('🟢 Stream is live');
 
+            // Get latest chunk index to determine if we should seek to live
+            const latestChunkIndex = data.latest_chunk_index || -1;
+
+            if (latestChunkIndex > 5) {
+                // Stream has been running for a while
+                // We'll fetch chunks quickly and then seek to live position
+                console.log(`📍 Stream in progress (latest chunk: ${latestChunkIndex})`);
+                console.log('📍 Will fetch chunks and seek to live position');
+
+                // Store target time for seeking (we'll calculate it after chunks are loaded)
+                window.shouldSeekToLive = true;
+                window.latestChunkIndex = latestChunkIndex;
+            } else {
+                // Stream just started, play from beginning
+                console.log('📍 Starting from beginning (stream recently started)');
+                window.shouldSeekToLive = false;
+            }
+
             // Always start from chunk 0 (initialization segment)
-            // This ensures proper video stream continuity
             lastChunkIndex = -1;
-            console.log('📍 Starting from chunk 0');
 
             isStreamActive = true;
             initializeMediaSource();
