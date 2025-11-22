@@ -969,12 +969,12 @@ class LiveCamController extends Controller
             // Notify viewers via Pusher
             event(new \App\Events\NewChunk($stream->id, $chunkIndex));
 
-            // Clean up old chunks (keep last 20 chunks = ~40 seconds with 2s chunks)
+            // Clean up old chunks (keep last 30 chunks = ~60 seconds with 2s chunks)
+            // This allows viewers to join mid-stream and catch up
             // Only start cleaning after we have enough chunks
-            if ($chunkIndex > 20) {
-                $this->cleanupOldChunks($stream->id, $chunkIndex - 20);
+            if ($chunkIndex > 30) {
+                $this->cleanupOldChunks($stream->id, $chunkIndex - 30);
             }
-
             return response()->json([
                 'success' => true,
                 'index' => $chunkIndex,
