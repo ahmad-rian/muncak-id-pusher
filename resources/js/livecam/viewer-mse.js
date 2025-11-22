@@ -344,7 +344,18 @@ function startFetching() {
             return;
         }
 
-        // Try to fetch the next expected chunk if not already fetching
+        // Special handling for catch-up mode after chunk 0
+        // Jump to recent chunks instead of sequentially fetching from chunk 1
+        if (window.shouldSeekToLive && lastChunkIndex >= 0 && typeof window.fastStartIndex === 'number') {
+            // Only jump if we haven't reached the fast start chunk yet
+            if (lastChunkIndex < window.fastStartIndex && !pendingChunks.has(window.fastStartIndex)) {
+                console.log(`⏩ Jumping from chunk ${lastChunkIndex} to chunk ${window.fastStartIndex} (catch-up mode)`);
+                fetchAndAppendChunk(window.fastStartIndex);
+                return;
+            }
+        }
+
+        // Normal sequential fetching
         const nextIndex = lastChunkIndex + 1;
         if (!pendingChunks.has(nextIndex)) {
             fetchAndAppendChunk(nextIndex);
