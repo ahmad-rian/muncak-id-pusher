@@ -546,8 +546,25 @@ function processQueue() {
                 console.log(`⏩ Seeking to live position: ${targetTime.toFixed(1)}s (buffer end: ${bufferEnd.toFixed(1)}s)`);
                 video.currentTime = targetTime;
 
-                // Clear flag so we don't seek again
+                // Clear flag and slow down polling
                 window.shouldSeekToLive = false;
+
+                // Update polling interval to normal speed
+                if (fetchInterval) {
+                    clearInterval(fetchInterval);
+                    fetchInterval = setInterval(() => {
+                        if (!isStreamActive || !mediaSource || mediaSource.readyState !== 'open') {
+                            clearInterval(fetchInterval);
+                            fetchInterval = null;
+                            return;
+                        }
+                        const nextIndex = lastChunkIndex + 1;
+                        if (!pendingChunks.has(nextIndex)) {
+                            fetchAndAppendChunk(nextIndex);
+                        }
+                    }, 2000); // Normal speed: 2 seconds
+                    console.log('🐢 Slowed down polling to 2s (caught up to live)');
+                }
             }
         }
 
