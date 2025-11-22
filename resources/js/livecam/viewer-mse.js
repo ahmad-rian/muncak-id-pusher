@@ -243,9 +243,8 @@ function initializeMediaSource() {
             }
 
             sourceBuffer = mediaSource.addSourceBuffer(mime);
-            // Use 'segments' mode for flexible chunk loading (YouTube-like)
-            // This allows viewers to join mid-stream
-            sourceBuffer.mode = 'segments';
+            // Use 'sequence' mode - WebM requires sequential chunks
+            sourceBuffer.mode = 'sequence';
 
             sourceBuffer.addEventListener('updateend', () => {
                 isUpdating = false;
@@ -335,8 +334,8 @@ function initializeMediaSource() {
 function startFetching() {
     console.log('📡 Starting chunk fetching...');
 
-    // Set up polling interval for continuous chunk fetching
-    const pollingInterval = window.shouldSeekToLive ? 300 : 2000;
+    // Very fast polling for catch-up (100ms), normal for regular playback
+    const pollingInterval = window.shouldSeekToLive ? 100 : 2000;
 
     fetchInterval = setInterval(() => {
         if (!isStreamActive || !mediaSource || mediaSource.readyState !== 'open') {
@@ -345,16 +344,28 @@ function startFetching() {
             return;
         }
 
-        // Special case: After chunk 0 in catch-up mode, jump to start chunk
-        if (window.shouldSeekToLive && lastChunkIndex === 0 && typeof window.fastStartIndex === 'number') {
-            console.log(`⏩ Jumping from chunk 0 to chunk ${window.fastStartIndex}`);
-            if (!pendingChunks.has(window.fastStartIndex)) {
-                fetchAndAppendChunk(window.fastStartIndex);
+        // In catch-up mode: aggressive parallel fetching (up to 5 chunks at once)
+        if (window.shouldSeekToLive && typeof window.fastStartIndex === 'number') {
+            const maxParallel = 5; // Fetch 5 chunks simultaneously for fast catch-up
+
+            for (let i = 1; i <= maxParallel; i++) {
+                const nextIdx = lastChunkIndex + i;
+
+                // Stop if we've caught up
+                if (nextIdx > window.fastStartIndex) {
+                    break;
+                }
+
+                // Fetch if not already pending
+                if (!pendingChunks.has(nextIdx)) {
+                    fetchAndAppendChunk(nextIdx);
+                }
             }
+
             return;
         }
 
-        // Normal sequential fetching
+        // Normal sequential fetching (one chunk at a time)
         const nextIndex = lastChunkIndex + 1;
         if (!pendingChunks.has(nextIndex)) {
             fetchAndAppendChunk(nextIndex);
@@ -362,7 +373,6 @@ function startFetching() {
     }, pollingInterval);
 
     // CRITICAL: Always fetch chunk 0 first (initialization segment)
-    // Even in segments mode, we need the init segment
     if (lastChunkIndex === -1 && !pendingChunks.has(0)) {
         console.log('🎬 Fetching initialization segment (chunk 0)...');
         fetchAndAppendChunk(0);
@@ -390,16 +400,11 @@ async function fetchAndAppendChunk(index) {
     }
 
     // Don't fetch chunks too far ahead to prevent race conditions
-    // EXCEPTION: Allow fetching fastStartIndex in catch-up mode (for initial jump)
-    const isFastStartJump = window.shouldSeekToLive &&
-        typeof window.fastStartIndex === 'number' &&
-        index === window.fastStartIndex;
-
-    // In catch-up mode: allow up to 3 chunks ahead (for sequential after jump)
+    // In catch-up mode: allow up to 5 chunks ahead (for aggressive parallel fetching)
     // In normal mode: allow up to 2 chunks ahead
-    const maxAhead = window.shouldSeekToLive ? 3 : 2;
+    const maxAhead = window.shouldSeekToLive ? 5 : 2;
 
-    if (lastChunkIndex >= 0 && index > lastChunkIndex + maxAhead && !isFastStartJump) {
+    if (lastChunkIndex >= 0 && index > lastChunkIndex + maxAhead) {
         console.log(`⏸️ Chunk ${index} too far ahead (last: ${lastChunkIndex}, max: ${maxAhead}), waiting...`);
         return;
     }
@@ -603,10 +608,9 @@ async function checkStreamStatus() {
             const latestChunkIndex = data.latest_chunk_index || -1;
 
             if (latestChunkIndex >= 2) {
-                // Stream has been running for a while
-                // Start from a recent chunk that's likely still available on server
-                // Server keeps last 30 chunks, so start from latest - 10 for safety
-                const startChunk = Math.max(1, latestChunkIndex - 10);
+                // Start from a recent chunk to minimize catch-up time
+                // Server keeps last 30 chunks, so start from latest - 5 for faster catch-up
+                const startChunk = Math.max(1, latestChunkIndex - 5);
                 console.log(`📍 Stream in progress (latest chunk: ${latestChunkIndex})`);
                 console.log(`📍 Starting from chunk ${startChunk} (catch-up mode)`);
 
