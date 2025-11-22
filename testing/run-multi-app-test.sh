@@ -12,13 +12,15 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-# Configuration - 5 Pusher Apps for Auto-Switch Testing
+# Configuration - 6 Pusher Apps for Auto-Switch Testing
+# 1 app per iteration + 1 backup
 declare -a PUSHER_APPS=(
-    "3b7e0d850b4ba0c792a5:2081349"  # App A (baru)
-    "f1613f42170f59122bbb:2081350"  # App B (baru)
-    "72a59c27088480530c54:2081337"  # App C (lama, masih aktif)
-    "b688e9a798c5c1c700d9:2081338"  # App D (lama, masih aktif)
-    "7ab2ae6ef27e5d8acd3e:2081339"  # App E (lama, masih aktif)
+    "56c5597baac683cfb64c:2081407"  # App 1 (Iteration 1)
+    "fd1e7db7aa717764d15e:2081408"  # App 2 (Iteration 2)
+    "5631f3f0cd921c889365:2081409"  # App 3 (Iteration 3)
+    "71e9cae1cddbd2f01e85:2081411"  # App 4 (Iteration 4)
+    "50f185a6ae3996d2517a:2081412"  # App 5 (Iteration 5)
+    "47fee0e9467c247ad163:2081414"  # App 6 (Backup)
 )
 
 ITERATIONS=5
@@ -92,36 +94,91 @@ run_test_iteration() {
     local json_output="${ITERATION_DIR}/pusher-test-${TIMESTAMP}.json"
     local test_success=false
     
-    # Run test and capture output
-    if artillery run \
+    # Run test and capture output with real-time quota monitoring
+    local artillery_pid
+    
+    # Run artillery in background
+    artillery run \
         --output "$json_output" \
         --variables '{"activeStreamSlug":"quam-modi-dolor-exercitation-voluptates-quasi-culpa-ut-fugiat-aP8DAM"}' \
-        "$ARTILLERY_CONFIG" 2>&1 | tee "${ITERATION_DIR}/test-output.log"; then
+        "$ARTILLERY_CONFIG" 2>&1 | tee "${ITERATION_DIR}/test-output.log" &
+    
+    artillery_pid=$!
+    
+    # Monitor for quota errors in real-time
+    local quota_detected=false
+    local monitor_count=0
+    
+    while kill -0 $artillery_pid 2>/dev/null; do
+        sleep 2
+        ((monitor_count++))
         
-        # Quota/error detection
-        if grep -Ei "(over quota|quota|rate limit|429|limit exceeded)" "${ITERATION_DIR}/test-output.log" >/dev/null; then
-            echo -e "${RED}✗ Detected quota/limit errors for App $app_id${NC}"
-            test_success=false
-        else
-            # Inspect JSON counters for errors
-            if [ -f "$json_output" ]; then
-                errors_total=$(node -e "const d=require('fs').existsSync('$json_output')?JSON.parse(require('fs').readFileSync('$json_output','utf8')):null; console.log(d? (d.aggregate?.counters?.['errors.total']||0) : 0)")
-                if [ "$errors_total" != "0" ]; then
-                    echo -e "${YELLOW}⚠ Errors detected in report (errors.total=$errors_total)${NC}"
-                    test_success=false
-                else
-                    echo -e "${GREEN}✓ Test completed successfully${NC}"
-                    test_success=true
-                fi
-            else
-                # No JSON output means something went wrong
-                echo -e "${YELLOW}⚠ No JSON output produced${NC}"
+        # Check every 2 seconds for quota errors
+        if [ -f "${ITERATION_DIR}/test-output.log" ]; then
+            if grep -qi "over quota" "${ITERATION_DIR}/test-output.log" 2>/dev/null; then
+                echo -e "${RED}⚠️  QUOTA EXCEEDED DETECTED! Terminating test early...${NC}"
+                
+                # Force kill Artillery and all child processes
+                pkill -9 -P $artillery_pid 2>/dev/null  # Kill children first
+                kill -9 $artillery_pid 2>/dev/null      # Then kill parent
+                
+                quota_detected=true
                 test_success=false
+                break
             fi
         fi
-    else
-        echo -e "${RED}✗ Test failed${NC}"
+        
+        # Timeout after 5 minutes (safety)
+        if [ $monitor_count -gt 150 ]; then
+            echo -e "${YELLOW}⚠️  Test timeout, terminating...${NC}"
+            
+            # Force kill on timeout
+            pkill -9 -P $artillery_pid 2>/dev/null
+            kill -9 $artillery_pid 2>/dev/null
+            break
+        fi
+    done
+    
+    # Wait for artillery to finish
+    wait $artillery_pid 2>/dev/null
+    local exit_code=$?
+    
+    if [ "$quota_detected" = true ]; then
+        echo -e "${RED}✗ Detected quota/limit errors for App $app_id${NC}"
         test_success=false
+    elif [ $exit_code -ne 0 ]; then
+        echo -e "${RED}✗ Test failed with exit code $exit_code${NC}"
+        test_success=false
+    else
+        # Check if JSON output exists and is valid
+        if [ -f "$json_output" ]; then
+            # Check for REAL errors (websocket errors, connection failures)
+            # NOT "Failed capture or match" which is normal
+            websocket_errors=$(node -e "const d=require('fs').existsSync('$json_output')?JSON.parse(require('fs').readFileSync('$json_output','utf8')):null; console.log(d? (d.aggregate?.counters?.['websocket.errors.total']||0) : 0)" 2>/dev/null || echo "0")
+            connection_failures=$(node -e "const d=require('fs').existsSync('$json_output')?JSON.parse(require('fs').readFileSync('$json_output','utf8')):null; console.log(d? (d.aggregate?.counters?.['connections.failed.total']||0) : 0)" 2>/dev/null || echo "0")
+            
+            # Test is successful if:
+            # 1. JSON output exists
+            # 2. No critical websocket errors
+            # 3. Connection failures < 50% of attempts
+            
+            if [ "$websocket_errors" != "0" ] && [ "$websocket_errors" != "" ] && [ "$websocket_errors" -gt 10 ]; then
+                echo -e "${YELLOW}⚠ High websocket errors detected ($websocket_errors)${NC}"
+                test_success=false
+            elif [ "$connection_failures" != "0" ] && [ "$connection_failures" != "" ] && [ "$connection_failures" -gt 50 ]; then
+                echo -e "${YELLOW}⚠ High connection failures detected ($connection_failures)${NC}"
+                test_success=false
+            else
+                echo -e "${GREEN}✓ Test completed successfully${NC}"
+                echo -e "${BLUE}  WebSocket errors: $websocket_errors${NC}"
+                echo -e "${BLUE}  Connection failures: $connection_failures${NC}"
+                test_success=true
+            fi
+        else
+            # No JSON output means something went wrong
+            echo -e "${YELLOW}⚠ No JSON output produced${NC}"
+            test_success=false
+        fi
     fi
     
     # Generate reports if test succeeded

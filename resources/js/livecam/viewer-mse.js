@@ -350,9 +350,18 @@ function startFetching() {
         }
     }, pollingInterval);
 
-    // During catch-up, fetch chunks ahead but not too aggressively
+    // During catch-up, start from recent chunks (latest - 5) to avoid 404 on old chunks
     if (window.shouldSeekToLive) {
-        console.log('🚀 Catch-up mode: fetching chunks progressively');
+        // If joining late, skip to recent chunks instead of starting from 0
+        if (typeof window.latestChunkIndex === 'number' && window.latestChunkIndex > 20) {
+            // Start from latest - 5 chunks for smooth playback
+            const startChunk = Math.max(0, window.latestChunkIndex - 5);
+            console.log(`🚀 Catch-up mode: starting from chunk ${startChunk} (latest: ${window.latestChunkIndex})`);
+            lastChunkIndex = startChunk - 1; // Will fetch startChunk next
+        } else {
+            console.log('🚀 Catch-up mode: fetching chunks progressively from start');
+        }
+
         // Fetch next 2 chunks (reduced from 3 to avoid race condition)
         setTimeout(() => {
             if (lastChunkIndex >= 0 && window.shouldSeekToLive) {
