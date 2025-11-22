@@ -328,8 +328,23 @@ function initializeMediaSource() {
 // Start fetching chunks
 function startFetching() {
     console.log('📡 Starting chunk fetching...');
-    if (lastChunkIndex === -1 && !pendingChunks.has(0)) {
-        fetchAndAppendChunk(0);
+
+    // If joining late, skip to recent chunks instead of starting from 0
+    if (window.shouldSeekToLive && typeof window.latestChunkIndex === 'number' && window.latestChunkIndex > 20) {
+        // Start from latest - 5 chunks for smooth playback
+        const startChunk = Math.max(0, window.latestChunkIndex - 5);
+        console.log(`🚀 Catch-up mode: starting from chunk ${startChunk} (latest: ${window.latestChunkIndex})`);
+        lastChunkIndex = startChunk - 1; // Will fetch startChunk next
+
+        // Fetch the start chunk immediately
+        if (!pendingChunks.has(startChunk)) {
+            fetchAndAppendChunk(startChunk);
+        }
+    } else {
+        // Normal start from beginning
+        if (lastChunkIndex === -1 && !pendingChunks.has(0)) {
+            fetchAndAppendChunk(0);
+        }
     }
 
     // Polling fallback: check for next chunk if Pusher event is missed
@@ -350,18 +365,8 @@ function startFetching() {
         }
     }, pollingInterval);
 
-    // During catch-up, start from recent chunks (latest - 5) to avoid 404 on old chunks
+    // During catch-up, fetch next chunks progressively
     if (window.shouldSeekToLive) {
-        // If joining late, skip to recent chunks instead of starting from 0
-        if (typeof window.latestChunkIndex === 'number' && window.latestChunkIndex > 20) {
-            // Start from latest - 5 chunks for smooth playback
-            const startChunk = Math.max(0, window.latestChunkIndex - 5);
-            console.log(`🚀 Catch-up mode: starting from chunk ${startChunk} (latest: ${window.latestChunkIndex})`);
-            lastChunkIndex = startChunk - 1; // Will fetch startChunk next
-        } else {
-            console.log('🚀 Catch-up mode: fetching chunks progressively from start');
-        }
-
         // Fetch next 2 chunks (reduced from 3 to avoid race condition)
         setTimeout(() => {
             if (lastChunkIndex >= 0 && window.shouldSeekToLive) {
@@ -373,7 +378,7 @@ function startFetching() {
                     }
                 }
             }
-        }, 800); // Increased delay to let chunk 0 process first
+        }, 800); // Increased delay to let initial chunk process first
 
         if (typeof window.fastStartIndex === 'number') {
             const fastStartCheck = setInterval(() => {
