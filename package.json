@@ -3,11 +3,16 @@
     "type": "module",
     "scripts": {
         "build": "vite build",
-        "dev": "vite"
+        "dev": "vite",
+        "test:pusher": "cd testing && artillery run artillery.yaml",
+        "test:pusher:full": "cd testing && bash run-full-test.sh",
+        "test:pusher:5x": "cd testing && bash run-5x-tests.sh pusher",
+        "test:report:pdf": "cd testing && node generate-pdf-report.js"
     },
     "devDependencies": {
         "@tailwindcss/forms": "^0.5.2",
         "@tailwindcss/typography": "^0.5.15",
+        "artillery": "^2.0.16",
         "autoprefixer": "^10.4.2",
         "axios": "^1.7.4",
         "buffer": "^6.0.3",
@@ -15,11 +20,13 @@
         "daisyui": "^4.12.14",
         "events": "^3.3.0",
         "laravel-vite-plugin": "^1.0",
+        "pdfkit": "^0.14.0",
         "postcss": "^8.4.31",
         "process": "^0.11.10",
         "tailwindcss": "^3.4.15",
         "util": "^0.12.5",
-        "vite": "^5.0"
+        "vite": "^5.0",
+        "ws": "^8.16.0"
     },
     "dependencies": {
         "laravel-echo": "^2.2.6",

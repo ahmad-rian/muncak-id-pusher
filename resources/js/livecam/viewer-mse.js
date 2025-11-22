@@ -285,20 +285,21 @@ function startFetching() {
         }
     }, pollingInterval);
 
-    // During catch-up, aggressively fetch multiple chunks ahead
+    // During catch-up, fetch chunks ahead but not too aggressively
     if (window.shouldSeekToLive) {
-        console.log('🚀 Catch-up mode: fetching multiple chunks in parallel');
-        // Fetch next 3 chunks immediately (after chunk 0)
+        console.log('🚀 Catch-up mode: fetching chunks progressively');
+        // Fetch next 2 chunks (reduced from 3 to avoid race condition)
         setTimeout(() => {
             if (lastChunkIndex >= 0 && window.shouldSeekToLive) {
-                for (let i = 1; i <= 3; i++) {
+                for (let i = 1; i <= 2; i++) {
                     const nextIdx = lastChunkIndex + i;
                     if (!pendingChunks.has(nextIdx)) {
-                        fetchAndAppendChunk(nextIdx);
+                        // Stagger the fetches to avoid overwhelming
+                        setTimeout(() => fetchAndAppendChunk(nextIdx), i * 300);
                     }
                 }
             }
-        }, 500);
+        }, 800); // Increased delay to let chunk 0 process first
 
         if (typeof window.fastStartIndex === 'number') {
             const fastStartCheck = setInterval(() => {
@@ -310,15 +311,16 @@ function startFetching() {
                     clearInterval(fastStartCheck);
                     if (!pendingChunks.has(window.fastStartIndex)) {
                         fetchAndAppendChunk(window.fastStartIndex);
-                        for (let i = 1; i <= 2; i++) {
-                            const idx = window.fastStartIndex + i;
+                        // Only fetch 1 chunk ahead (reduced from 2)
+                        setTimeout(() => {
+                            const idx = window.fastStartIndex + 1;
                             if (!pendingChunks.has(idx)) {
                                 fetchAndAppendChunk(idx);
                             }
-                        }
+                        }, 500);
                     }
                 }
-            }, 200);
+            }, 300); // Increased interval for more stable checking
         }
     }
 }
@@ -342,6 +344,13 @@ async function fetchAndAppendChunk(index) {
         return;
     }
 
+    // Don't fetch chunks too far ahead (max 2 chunks ahead of last processed)
+    // This prevents race condition where we try to fetch chunks not yet generated
+    if (lastChunkIndex >= 0 && index > lastChunkIndex + 2) {
+        console.log(`⏸️ Chunk ${index} too far ahead (last: ${lastChunkIndex}), waiting...`);
+        return;
+    }
+
     // Mark as pending
     pendingChunks.add(index);
 
@@ -360,12 +369,16 @@ async function fetchAndAppendChunk(index) {
                 return;
             }
 
+            // Increase retry count to 5 and use longer delays
             const retryCount = retryCounts.get(index) || 0;
-            if (retryCount < 3) {
+            if (retryCount < 5) {
                 retryCounts.set(index, retryCount + 1);
-                setTimeout(() => fetchAndAppendChunk(index), 500 * (retryCount + 1));
+                // Progressive delay: 1s, 2s, 3s, 4s, 5s
+                const delay = 1000 * (retryCount + 1);
+                console.log(`🔄 Will retry chunk ${index} in ${delay}ms (attempt ${retryCount + 1}/5)`);
+                setTimeout(() => fetchAndAppendChunk(index), delay);
             } else {
-                console.log(`❌ Giving up on chunk ${index} after 3 retries`);
+                console.log(`❌ Giving up on chunk ${index} after 5 retries`);
                 retryCounts.delete(index);
             }
             return;
