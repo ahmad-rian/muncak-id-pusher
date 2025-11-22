@@ -16,6 +16,7 @@ let isStreamActive = false;
 let isFetchingChunk = false;
 let pendingChunks = new Set(); // Track chunks being fetched
 let retryCounts = new Map(); // Retry counters per chunk index
+window.initChunkAppended = false;
 
 console.log('👁️ MSE Viewer starting...');
 console.log('Stream ID:', streamId);
@@ -268,7 +269,7 @@ function startFetching() {
 
     // Polling fallback: check for next chunk if Pusher event is missed
     // Use faster polling during catch-up phase
-    const pollingInterval = window.shouldSeekToLive ? 800 : 2500; // 800ms when catching up, 2.5s normally
+    const pollingInterval = window.shouldSeekToLive ? 500 : 2000;
 
     fetchInterval = setInterval(() => {
         if (!isStreamActive || !mediaSource || mediaSource.readyState !== 'open') {
@@ -298,6 +299,27 @@ function startFetching() {
                 }
             }
         }, 500);
+
+        if (typeof window.fastStartIndex === 'number') {
+            const fastStartCheck = setInterval(() => {
+                if (!isStreamActive || !mediaSource || mediaSource.readyState !== 'open') {
+                    clearInterval(fastStartCheck);
+                    return;
+                }
+                if (window.initChunkAppended) {
+                    clearInterval(fastStartCheck);
+                    if (!pendingChunks.has(window.fastStartIndex)) {
+                        fetchAndAppendChunk(window.fastStartIndex);
+                        for (let i = 1; i <= 2; i++) {
+                            const idx = window.fastStartIndex + i;
+                            if (!pendingChunks.has(idx)) {
+                                fetchAndAppendChunk(idx);
+                            }
+                        }
+                    }
+                }
+            }, 200);
+        }
     }
 }
 
@@ -431,6 +453,10 @@ function processQueue() {
         sourceBuffer.appendBuffer(chunk.data);
         console.log(`✅ Appended chunk ${chunk.index}`);
 
+        if (chunk.index === 0) {
+            window.initChunkAppended = true;
+        }
+
         // Auto-play as soon as possible
         if (video.paused) {
             // Try to play immediately after any chunk is appended
@@ -449,11 +475,8 @@ function processQueue() {
         if (window.shouldSeekToLive && video.buffered.length > 0) {
             const bufferEnd = video.buffered.end(0);
 
-            // Wait until we have at least 10 seconds of buffer (or enough chunks)
-            // Each chunk is ~2 seconds, so 5 chunks = 10 seconds
-            if (chunk.index >= 5 && bufferEnd >= 8) {
-                // Seek to near the end of buffer (leave 2 seconds for safety)
-                const targetTime = Math.max(0, bufferEnd - 2);
+            if (chunk.index >= 2 && bufferEnd >= 3) {
+                const targetTime = Math.max(0, bufferEnd - 1);
                 console.log(`⏩ Seeking to live position: ${targetTime.toFixed(1)}s (buffer end: ${bufferEnd.toFixed(1)}s)`);
                 video.currentTime = targetTime;
 
@@ -496,7 +519,7 @@ async function checkStreamStatus() {
             // Get latest chunk index to determine if we should seek to live
             const latestChunkIndex = data.latest_chunk_index || -1;
 
-            if (latestChunkIndex > 5) {
+            if (latestChunkIndex >= 2) {
                 // Stream has been running for a while
                 // We'll fetch chunks quickly and then seek to live position
                 console.log(`📍 Stream in progress (latest chunk: ${latestChunkIndex})`);
@@ -505,10 +528,12 @@ async function checkStreamStatus() {
                 // Store target time for seeking (we'll calculate it after chunks are loaded)
                 window.shouldSeekToLive = true;
                 window.latestChunkIndex = latestChunkIndex;
+                window.fastStartIndex = Math.max(1, latestChunkIndex - 2);
             } else {
                 // Stream just started, play from beginning
                 console.log('📍 Starting from beginning (stream recently started)');
                 window.shouldSeekToLive = false;
+                window.fastStartIndex = undefined;
             }
 
             // Always start from chunk 0 (initialization segment)

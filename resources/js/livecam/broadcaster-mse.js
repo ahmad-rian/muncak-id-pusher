@@ -422,7 +422,7 @@ function toggleMirror() {
 
 // Auto-classification untuk trail conditions
 let classificationTimer = null;
-const CLASSIFICATION_INTERVAL = 2 * 60 * 1000; // 2 menit (untuk testing)
+const CLASSIFICATION_INTERVAL = 30 * 60 * 1000;
 
 function captureFrameForClassification() {
     const preview = document.getElementById('camera-preview');

@@ -1,0 +1,334 @@
+# artillery-pusher-enhanced.yaml
+# Load Testing untuk Live Cam dengan Pusher - Enhanced Version
+# Sesuai dengan Parameter Penelitian Skripsi
+
+config:
+  target: "https://pusher.muncak.id"
+  
+  # Testing dilakukan pada stream aktif spesifik
+  defaults:
+    activeStreamSlug: "quam-modi-dolor-exercitation-voluptates-quasi-culpa-ut-fugiat-aP8DAM"
+  
+  phases:
+    # Phase 1: Baseline (5 concurrent users)
+    - duration: 120
+      arrivalRate: 5
+      name: "Baseline - 5 Concurrent Viewers"
+    
+    # Phase 2: Low Load (25 concurrent users)
+    - duration: 180
+      arrivalRate: 25
+      name: "Low Load - 25 Concurrent Viewers"
+    
+    # Phase 3: Medium Load (50 concurrent users)
+    - duration: 240
+      arrivalRate: 50
+      name: "Medium Load - 50 Concurrent Viewers"
+    
+    # Phase 4: High Load (100 concurrent users)
+    - duration: 300
+      arrivalRate: 100
+      name: "High Load - 100 Concurrent Viewers"
+    
+    # Phase 5: Peak Load (200 concurrent users)
+    - duration: 240
+      arrivalRate: 200
+      name: "Peak Load - 200 Concurrent Viewers"
+    
+    # Phase 6: Stress Test (300+ concurrent users)
+    - duration: 180
+      arrivalRate: 300
+      rampTo: 500
+      name: "Stress Test - 300-500 Concurrent Viewers"
+
+  plugins:
+    expect: {}
+    metrics-by-endpoint: {}
+    
+  variables:
+    pusherKey: "81f8af2b6681fa8ada90"
+    pusherCluster: "ap1"
+    
+    # Video quality yang ditest (sesuai batasan masalah)
+    videoResolution:
+      - "720p"
+      - "1080p"
+
+  processor: "./test-processor.js"
+
+  # SLA sesuai parameter penelitian
+  ensure:
+    maxErrorRate: 1          # Error rate < 1%
+    p95: 2000                # Latency p95 < 2s
+    p99: 5000                # Latency p99 < 5s
+    medianLatency: 1000      # Median latency < 1s
+
+scenarios:
+  # Scenario 1: Viewer menonton stream (70% traffic)
+  - name: "Viewer - Watch Live Stream"
+    weight: 70
+    flow:
+      # 1. Load halaman live cam
+      - get:
+          url: "/live-cam/{{ activeStreamSlug }}"
+          expect:
+            - statusCode: 200
+            - contentType: "text/html"
+          capture:
+            - json: "$.stream.id"
+              as: "streamId"
+          afterResponse: "recordPageLoadTime"
+      
+      - think: 1
+      
+      # 2. Establish Pusher WebSocket connection
+      - function: "connectPusher"
+      
+      # Metrics: Connection Establishment Time
+      - function: "measureConnectionTime"
+      
+      # 3. Subscribe to stream channel
+      - function: "subscribeToStreamChannel"
+      
+      # Metrics: Subscribe latency
+      - function: "measureSubscribeLatency"
+      
+      # 4. Initialize WebRTC connection
+      - function: "initializeWebRTC"
+      
+      # 5. Receive video stream via WebSocket
+      # WebSocket untuk streaming video 1 arah dari streamer ke viewers
+      - think: 2
+      
+      # 6. Monitor streaming metrics
+      - loop:
+          count: 10  # Monitor selama ~90 detik
+          flow:
+            # Measure frame rate
+            - function: "measureFrameRate"
+            
+            # Measure video latency (end-to-end)
+            - function: "measureVideoLatency"
+            
+            # Check connection quality
+            - function: "checkConnectionQuality"
+            
+            # Simulate realistic viewing pattern
+            - think:
+                min: 8
+                max: 12
+      
+      # 7. Disconnect
+      - function: "disconnectPusher"
+      - function: "closeWebRTC"
+
+  # Scenario 2: Viewer dengan interaksi chat (20% traffic)
+  - name: "Viewer - Watch & Chat"
+    weight: 20
+    flow:
+      - get:
+          url: "/live-cam/{{ activeStreamSlug }}"
+          expect:
+            - statusCode: 200
+      
+      - think: 1
+      - function: "connectPusher"
+      - function: "subscribeToStreamChannel"
+      - function: "subscribeToChat"
+      - function: "initializeWebRTC"
+      
+      # Load chat history
+      - get:
+          url: "/api/live-cam/{{ activeStreamSlug }}/chat"
+          expect:
+            - statusCode: 200
+          afterResponse: "recordChatLoadLatency"
+      
+      # Send chat messages while watching
+      - loop:
+          count: 5
+          flow:
+            # Send chat via WebSocket
+            - function: "sendChatMessage"
+            
+            # Measure chat message latency
+            - function: "measureChatLatency"
+            
+            # Continue watching
+            - think:
+                min: 10
+                max: 20
+      
+      - think: 30
+      - function: "disconnectPusher"
+      - function: "closeWebRTC"
+
+  # Scenario 3: Rapid join/leave - High churn (8% traffic)
+  - name: "High Churn - Join/Leave Pattern"
+    weight: 8
+    flow:
+      - get:
+          url: "/live-cam/{{ activeStreamSlug }}"
+      
+      - function: "connectPusher"
+      - function: "subscribeToStreamChannel"
+      - function: "initializeWebRTC"
+      
+      # Measure quick connection/disconnection
+      - function: "measureChurnLatency"
+      
+      # Stay only 5-15 seconds (channel surfer)
+      - think:
+          min: 5
+          max: 15
+      
+      - function: "disconnectPusher"
+      - function: "closeWebRTC"
+
+  # Scenario 4: Monitor stream metadata (2% traffic)
+  - name: "Stream Metadata Monitor"
+    weight: 2
+    flow:
+      - get:
+          url: "/api/live-cam/{{ activeStreamSlug }}/status"
+          expect:
+            - statusCode: 200
+          capture:
+            - json: "$.viewers"
+              as: "viewerCount"
+            - json: "$.quality"
+              as: "streamQuality"
+          afterResponse: "recordMetadataLatency"
+      
+      - function: "connectPusher"
+      - function: "subscribeToMetadata"
+      
+      # Monitor for 60 seconds
+      - think: 60
+      
+      - function: "disconnectPusher"
+
+# Metrics Khusus untuk Penelitian (Parameter dari Tabel 3.7.1)
+metrics:
+  # 1. LATENCY METRICS
+  - name: "websocket.connection.latency"
+    description: "Time to establish WebSocket connection (ms)"
+    
+  - name: "websocket.subscribe.latency"
+    description: "Time to subscribe to Pusher channel (ms)"
+    
+  - name: "video.end_to_end.latency"
+    description: "End-to-end video latency (ms)"
+    
+  - name: "chat.message.latency"
+    description: "Chat message round-trip latency (ms)"
+  
+  # 2. THROUGHPUT METRICS
+  - name: "websocket.messages.per_second"
+    description: "WebSocket messages throughput (msg/s)"
+    
+  - name: "video.bitrate.average"
+    description: "Average video bitrate (kbps)"
+    
+  - name: "video.frames.per_second"
+    description: "Video frame rate (fps)"
+  
+  # 3. RESOURCE USAGE METRICS
+  - name: "client.cpu.usage"
+    description: "Client CPU usage percentage (%)"
+    
+  - name: "client.memory.usage"
+    description: "Client memory usage (MB)"
+    
+  - name: "network.bandwidth.usage"
+    description: "Network bandwidth usage (Mbps)"
+  
+  # 4. CONNECTION METRICS
+  - name: "concurrent.connections.active"
+    description: "Number of active concurrent connections"
+    
+  - name: "connections.established.total"
+    description: "Total connections established"
+    
+  - name: "connections.failed.total"
+    description: "Total failed connections"
+  
+  # 5. QUALITY METRICS
+  - name: "video.quality.resolution"
+    description: "Actual video resolution achieved"
+    
+  - name: "video.packets.lost"
+    description: "Video packets lost (%)"
+    
+  - name: "stream.stability.score"
+    description: "Stream stability score (0-100)"
+  
+  # 6. ERROR METRICS
+  - name: "websocket.errors.total"
+    description: "Total WebSocket errors"
+    
+  - name: "webrtc.errors.total"
+    description: "Total WebRTC errors"
+    
+  - name: "disconnections.unexpected"
+    description: "Unexpected disconnections"
+
+# Hooks untuk monitoring
+before:
+  flow:
+    - function: "setupMonitoring"
+    - function: "initializeMetricsCollector"
+    - function: "checkStreamActive"
+    - log: "Starting Pusher WebSocket performance test"
+    - log: "Target stream: {{ activeStreamSlug }}"
+
+after:
+  flow:
+    - function: "collectAllMetrics"
+    - function: "calculateStatistics"
+    - function: "generatePerformanceReport"
+    - function: "exportMetricsToCSV"
+    - log: "Performance test completed"
+    - log: "Generating comparison data for Reverb test"
+
+# Expectations sesuai SLA penelitian
+expectations:
+  # Latency Requirements
+  - name: "WebSocket connection < 500ms (p95)"
+    condition: "websocket.connection.latency.p95 < 500"
+    
+  - name: "Subscribe latency < 200ms (p95)"
+    condition: "websocket.subscribe.latency.p95 < 200"
+    
+  - name: "Video latency < 3000ms (p95)"
+    condition: "video.end_to_end.latency.p95 < 3000"
+    
+  - name: "Chat latency < 500ms (p95)"
+    condition: "chat.message.latency.p95 < 500"
+
+  # Throughput Requirements
+  - name: "Handle 100+ messages/sec"
+    condition: "websocket.messages.per_second.mean > 100"
+    
+  - name: "Maintain 30+ fps"
+    condition: "video.frames.per_second.mean > 30"
+
+  # Connection Requirements
+  - name: "Support 200+ concurrent viewers"
+    condition: "concurrent.connections.active.max > 200"
+    
+  - name: "Error rate < 1%"
+    condition: "websocket.errors.total.rate < 1"
+
+  # Quality Requirements
+  - name: "Packet loss < 2%"
+    condition: "video.packets.lost.mean < 2"
+    
+  - name: "Stream stability > 95%"
+    condition: "stream.stability.score.mean > 95"
+
+# Output configuration
+output:
+  json: "./results/pusher-performance-{{ $timestamp }}.json"
+  html: "./results/pusher-performance-{{ $timestamp }}.html"
+  csv: "./results/pusher-metrics-{{ $timestamp }}.csv"

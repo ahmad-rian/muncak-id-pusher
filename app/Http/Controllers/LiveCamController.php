@@ -1066,7 +1066,11 @@ class LiveCamController extends Controller
             if (file_exists($streamDir)) {
                 $chunks = glob($streamDir . '/chunk_*.webm');
                 if (!empty($chunks)) {
-                    // Extract chunk indices and get the maximum
+                    $streamStartTime = $stream->started_at ? $stream->started_at->timestamp : 0;
+                    $chunks = array_filter($chunks, function ($path) use ($streamStartTime) {
+                        return filemtime($path) >= $streamStartTime;
+                    });
+
                     $indices = array_map(function ($path) {
                         preg_match('/chunk_(\d+)\.webm$/', $path, $matches);
                         return isset($matches[1]) ? (int) $matches[1] : -1;
