@@ -256,6 +256,12 @@ function initializeMediaSource() {
                 // Stop all ongoing operations
                 isUpdating = false;
 
+                // Reset state BEFORE cleanup to avoid race condition
+                const wasActive = isStreamActive;
+                appendQueue = [];
+                pendingChunks.clear();
+                lastChunkIndex = -1;
+
                 // Clear intervals
                 if (fetchInterval) {
                     clearInterval(fetchInterval);
@@ -265,14 +271,11 @@ function initializeMediaSource() {
                 // Cleanup properly (async)
                 await cleanupMediaSource();
 
-                // Reset state for retry
+                // Nullify sourceBuffer after cleanup
                 sourceBuffer = null;
-                appendQueue = [];
-                pendingChunks.clear();
-                lastChunkIndex = -1;
 
                 // Retry with exponential backoff
-                if (sbErrorRetries <= 3 && isStreamActive) {
+                if (sbErrorRetries <= 3 && wasActive) {
                     const delay = Math.pow(2, sbErrorRetries - 1) * 1000; // 1s, 2s, 4s
                     console.log(`🔄 Retrying MediaSource initialization in ${delay}ms (attempt ${sbErrorRetries}/3)`);
                     setTimeout(() => {
