@@ -36,7 +36,7 @@ config:
   # Plugins removed - causing extensibility issues with Artillery 2.x
   
   variables:
-    pusherKey: "56c5597baac683cfb64c"
+    pusherKey: "728d92e45aebf9df1926"
     pusherCluster: "ap1"
     
     # Video quality yang ditest (sesuai batasan masalah)

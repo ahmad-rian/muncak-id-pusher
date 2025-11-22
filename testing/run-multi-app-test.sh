@@ -12,16 +12,18 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-# Configuration - 6 Pusher Apps for Auto-Switch Testing
-# 1 app per iteration + 1 backup
+# Configuration - 7 Pusher Apps (6 for Testing + 1 for Production)
+# Apps 1-6: Dedicated for load testing (auto-rotation)
+# App 7: Production only (not used in testing)
 declare -a PUSHER_APPS=(
-    "56c5597baac683cfb64c:2081407"  # App 1 (Iteration 1)
-    "fd1e7db7aa717764d15e:2081408"  # App 2 (Iteration 2)
-    "5631f3f0cd921c889365:2081409"  # App 3 (Iteration 3)
-    "71e9cae1cddbd2f01e85:2081411"  # App 4 (Iteration 4)
-    "50f185a6ae3996d2517a:2081412"  # App 5 (Iteration 5)
-    "47fee0e9467c247ad163:2081414"  # App 6 (Backup)
+    "728d92e45aebf9df1926:2081441"  # App 1 (Testing)
+    "20651eee1d736b23b0b2:2081444"  # App 2 (Testing)
+    "295a31241906c1e9a4a0:2081445"  # App 3 (Testing)
+    "d092ff358fe2857166c3:2081449"  # App 4 (Testing)
+    "34e3c521c3564f503ef3:2081455"  # App 5 (Testing)
+    "29daf4f957ff61f5f88b:2081450"  # App 6 (Testing - Backup)
 )
+# App 7 (2081450) reserved for production - update .env separately
 
 ITERATIONS=5
 RESULTS_DIR="./results/multi-app-test"
