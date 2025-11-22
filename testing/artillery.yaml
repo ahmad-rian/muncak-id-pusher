@@ -9,42 +9,47 @@ config:
   defaults:
     activeStreamSlug: "quam-modi-dolor-exercitation-voluptates-quasi-culpa-ut-fugiat-aP8DAM"
   
+  
   phases:
+    # Safe Configuration for Pusher Free Tier
+    # Max 30 concurrent users, 30s per phase
+    # Total: 3 menit per test, 5 apps = 5 iterations guaranteed
+    # Safety buffer: 70% (30/100 concurrent limit)
+    
     # Phase 1: Baseline (5 concurrent users)
-    - duration: 120
+    - duration: 30
       arrivalRate: 5
       name: "Baseline - 5 Concurrent Viewers"
     
-    # Phase 2: Low Load (25 concurrent users)
-    - duration: 180
+    # Phase 2: Low Load (10 concurrent users)
+    - duration: 30
+      arrivalRate: 10
+      name: "Low Load - 10 Concurrent Viewers"
+    
+    # Phase 3: Medium Load (15 concurrent users)
+    - duration: 30
+      arrivalRate: 15
+      name: "Medium Load - 15 Concurrent Viewers"
+    
+    # Phase 4: Moderate Load (20 concurrent users)
+    - duration: 30
+      arrivalRate: 20
+      name: "Moderate Load - 20 Concurrent Viewers"
+    
+    # Phase 5: Higher Load (25 concurrent users)
+    - duration: 30
       arrivalRate: 25
-      name: "Low Load - 25 Concurrent Viewers"
+      name: "Higher Load - 25 Concurrent Viewers"
     
-    # Phase 3: Medium Load (50 concurrent users)
-    - duration: 240
-      arrivalRate: 50
-      name: "Medium Load - 50 Concurrent Viewers"
-    
-    # Phase 4: High Load (100 concurrent users)
-    - duration: 300
-      arrivalRate: 100
-      name: "High Load - 100 Concurrent Viewers"
-    
-    # Phase 5: Peak Load (200 concurrent users)
-    - duration: 240
-      arrivalRate: 200
-      name: "Peak Load - 200 Concurrent Viewers"
-    
-    # Phase 6: Stress Test (300+ concurrent users)
-    - duration: 180
-      arrivalRate: 300
-      rampTo: 500
-      name: "Stress Test - 300-500 Concurrent Viewers"
+    # Phase 6: Peak Load (30 concurrent users)
+    - duration: 30
+      arrivalRate: 30
+      name: "Peak Load - 30 Concurrent Viewers (Safe Zone)"
 
   # Plugins removed - causing extensibility issues with Artillery 2.x
   
   variables:
-    pusherKey: "ab4a1f149db127f227ca"
+    pusherKey: "3b7e0d850b4ba0c792a5"
     pusherCluster: "ap1"
     
     # Video quality yang ditest (sesuai batasan masalah)
@@ -342,9 +347,9 @@ expectations:
   - name: "Maintain 30+ fps"
     condition: "video.frames.per_second.mean > 30"
 
-  # Connection Requirements
-  - name: "Support 200+ concurrent viewers"
-    condition: "concurrent.connections.active.max > 200"
+  # Connection Requirements (Safe for Pusher Free Tier - 70% buffer)
+  - name: "Support 30+ concurrent viewers"
+    condition: "concurrent.connections.active.max > 30"
     
   - name: "Error rate < 1%"
     condition: "websocket.errors.total.rate < 1"

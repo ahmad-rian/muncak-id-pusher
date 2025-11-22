@@ -53,6 +53,15 @@ function checkStreamActive(context, events, done) {
   return done();
 }
 
+// Dummy functions untuk menghilangkan warning metricsByEndpoint
+function metricsByEndpoint_beforeRequest(requestParams, context, ee, next) {
+  return next();
+}
+
+function metricsByEndpoint_afterResponse(requestParams, response, context, ee, next) {
+  return next();
+}
+
 // Connect to Pusher
 function connectPusher(context, events, done) {
   const startTime = Date.now();
@@ -526,6 +535,8 @@ export {
   setupMonitoring,
   initializeMetricsCollector,
   checkStreamActive,
+  metricsByEndpoint_beforeRequest,
+  metricsByEndpoint_afterResponse,
   connectPusher,
   measureConnectionTime,
   subscribeToStreamChannel,

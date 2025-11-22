@@ -5,6 +5,7 @@
         "build": "vite build",
         "dev": "vite",
         "test:pusher": "cd testing && artillery run artillery.yaml",
+        "test:pusher:multi": "cd testing && bash run-multi-app-test.sh",
         "test:pusher:full": "cd testing && bash run-full-test.sh",
         "test:pusher:5x": "cd testing && bash run-5x-tests.sh pusher",
         "test:report:pdf": "cd testing && node generate-pdf-report.js"

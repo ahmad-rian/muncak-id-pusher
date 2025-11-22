@@ -133,24 +133,50 @@ async function cleanupMediaSource() {
     // Remove SourceBuffer event listeners and buffered data
     if (sourceBuffer) {
         try {
-            // Wait for any pending updates to complete
-            if (sourceBuffer.updating) {
+            // Wait for any pending updates
+            if (sourceBuffer && sourceBuffer.updating) {
                 await new Promise(resolve => {
-                    sourceBuffer.addEventListener('updateend', resolve, { once: true });
+                    const checkUpdate = setInterval(() => {
+                        if (!sourceBuffer || !sourceBuffer.updating) {
+                            clearInterval(checkUpdate);
+                            resolve();
+                        }
+                    }, 100);
+
+                    // Timeout after 2 seconds
+                    setTimeout(() => {
+                        clearInterval(checkUpdate);
+                        resolve();
+                    }, 2000);
                 });
             }
 
-            // Remove all buffered data
-            if (sourceBuffer.buffered.length > 0) {
-                const start = sourceBuffer.buffered.start(0);
-                const end = sourceBuffer.buffered.end(sourceBuffer.buffered.length - 1);
-                sourceBuffer.remove(start, end);
-                console.log('🗑️ Removing buffered data from', start, 'to', end);
+            // Remove buffered data
+            if (sourceBuffer && mediaSource && mediaSource.readyState === 'open') {
+                try {
+                    const buffered = sourceBuffer.buffered;
+                    if (buffered.length > 0) {
+                        const start = buffered.start(0);
+                        const end = buffered.end(buffered.length - 1);
+                        console.log(`🗑️ Removing buffered data from ${start} to ${end}`);
 
-                // Wait for remove operation to complete
-                await new Promise(resolve => {
-                    sourceBuffer.addEventListener('updateend', resolve, { once: true });
-                });
+                        if (!sourceBuffer.updating) {
+                            sourceBuffer.remove(start, end);
+
+                            // Wait for remove to complete
+                            await new Promise(resolve => {
+                                if (sourceBuffer) {
+                                    sourceBuffer.addEventListener('updateend', resolve, { once: true });
+                                    setTimeout(resolve, 1000); // Timeout
+                                } else {
+                                    resolve();
+                                }
+                            });
+                        }
+                    }
+                } catch (err) {
+                    console.log('Error removing buffer:', err.message);
+                }
             }
         } catch (err) {
             console.log('Could not remove buffer:', err.message);
@@ -160,14 +186,12 @@ async function cleanupMediaSource() {
     // Close MediaSource
     if (mediaSource) {
         try {
-            if (mediaSource.readyState === 'open') {
+            if (mediaSource.readyState === 'open' && sourceBuffer && !sourceBuffer.updating) {
                 mediaSource.endOfStream();
             }
         } catch (err) {
             console.log('MediaSource already closed:', err.message);
         }
-        mediaSource = null;
-        sourceBuffer = null;
     }
 
     // Clear video source and reset
@@ -177,6 +201,10 @@ async function cleanupMediaSource() {
         video.load();
         video.currentTime = 0;
     }
+
+    // Nullify references
+    mediaSource = null;
+    sourceBuffer = null;
 }
 
 // Initialize MediaSource
@@ -200,12 +228,19 @@ function initializeMediaSource() {
     mediaSource.addEventListener('sourceopen', () => {
         console.log('✅ MediaSource opened');
 
+        // Prevent multiple initialization
+        if (sourceBuffer) {
+            console.log('⚠️ SourceBuffer already exists, skipping initialization');
+            return;
+        }
+
         try {
             const mime = 'video/webm; codecs="vp8"';
             if (!window.MediaSource.isTypeSupported(mime)) {
                 alert('WebM VP8 not supported in this browser');
                 return;
             }
+
             sourceBuffer = mediaSource.addSourceBuffer(mime);
             sourceBuffer.mode = 'sequence';
 
@@ -218,8 +253,23 @@ function initializeMediaSource() {
                 console.error('❌ SourceBuffer error:', e);
                 sbErrorRetries += 1;
 
+                // Stop all ongoing operations
+                isUpdating = false;
+
+                // Clear intervals
+                if (fetchInterval) {
+                    clearInterval(fetchInterval);
+                    fetchInterval = null;
+                }
+
                 // Cleanup properly (async)
                 await cleanupMediaSource();
+
+                // Reset state for retry
+                sourceBuffer = null;
+                appendQueue = [];
+                pendingChunks.clear();
+                lastChunkIndex = -1;
 
                 // Retry with exponential backoff
                 if (sbErrorRetries <= 3 && isStreamActive) {
@@ -247,7 +297,21 @@ function initializeMediaSource() {
 
         } catch (err) {
             console.error('❌ Failed to create SourceBuffer:', err);
-            alert('Failed to initialize video player: ' + err.message);
+
+            // Cleanup and retry
+            sourceBuffer = null;
+            if (sbErrorRetries < 3 && isStreamActive) {
+                sbErrorRetries++;
+                const delay = 1000 * sbErrorRetries;
+                console.log(`🔄 Retrying after SourceBuffer creation error in ${delay}ms`);
+                setTimeout(() => {
+                    if (isStreamActive) {
+                        initializeMediaSource();
+                    }
+                }, delay);
+            } else {
+                alert('Failed to initialize video player: ' + err.message);
+            }
         }
     });
 
@@ -257,6 +321,7 @@ function initializeMediaSource() {
 
     mediaSource.addEventListener('sourceclose', () => {
         console.log('🔌 MediaSource closed');
+        sourceBuffer = null;
     });
 }
 
