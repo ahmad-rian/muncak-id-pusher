@@ -333,35 +333,8 @@ function initializeMediaSource() {
 function startFetching() {
     console.log('📡 Starting chunk fetching...');
 
-    // CRITICAL: Always fetch chunk 0 first (initialization segment)
-    // WebM format requires init segment before any media chunks
-    if (lastChunkIndex === -1 && !pendingChunks.has(0)) {
-        console.log('🎬 Fetching initialization segment (chunk 0)...');
-        fetchAndAppendChunk(0);
-        return; // Wait for chunk 0 to complete
-    }
-
-    // If joining late, skip to recent chunks AFTER chunk 0 is loaded
-    if (window.shouldSeekToLive && typeof window.latestChunkIndex === 'number' && window.latestChunkIndex > 20) {
-        // Start from latest - 5 chunks for smooth playback
-        const startChunk = Math.max(1, window.latestChunkIndex - 5); // Min 1, not 0
-        console.log(`🚀 Catch-up mode: will fetch from chunk ${startChunk} (latest: ${window.latestChunkIndex}) after init segment`);
-
-        // Fetch the start chunk after chunk 0 is processed
-        if (lastChunkIndex >= 0 && !pendingChunks.has(startChunk)) {
-            fetchAndAppendChunk(startChunk);
-        }
-    } else {
-        // Normal start from beginning (only if not in catch-up and chunk 0 already handled)
-        if (lastChunkIndex === -1 && !pendingChunks.has(0)) {
-            // This case should ideally be handled by the CRITICAL block above
-            // but kept for robustness if logic changes.
-            fetchAndAppendChunk(0);
-        }
-    }
-
-    // Polling fallback: check for next chunk if Pusher event is missed
-    // Use faster polling during catch-up phase
+    // Set up polling interval FIRST (before any early returns)
+    // This ensures continuous chunk fetching even after chunk 0
     const pollingInterval = window.shouldSeekToLive ? 500 : 2000;
 
     fetchInterval = setInterval(() => {
@@ -377,6 +350,32 @@ function startFetching() {
             fetchAndAppendChunk(nextIndex);
         }
     }, pollingInterval);
+
+    // CRITICAL: Always fetch chunk 0 first (initialization segment)
+    // WebM format requires init segment before any media chunks
+    if (lastChunkIndex === -1 && !pendingChunks.has(0)) {
+        console.log('🎬 Fetching initialization segment (chunk 0)...');
+        fetchAndAppendChunk(0);
+        // Don't return early - let the polling interval handle subsequent chunks
+        return;
+    }
+
+    // If joining late, skip to recent chunks AFTER chunk 0 is loaded
+    if (window.shouldSeekToLive && typeof window.latestChunkIndex === 'number' && window.latestChunkIndex > 20) {
+        // Start from latest - 5 chunks for smooth playback
+        const startChunk = Math.max(1, window.latestChunkIndex - 5); // Min 1, not 0
+        console.log(`🚀 Catch-up mode: will fetch from chunk ${startChunk} (latest: ${window.latestChunkIndex}) after init segment`);
+
+        // Fetch the start chunk after chunk 0 is processed
+        if (lastChunkIndex >= 0 && !pendingChunks.has(startChunk)) {
+            fetchAndAppendChunk(startChunk);
+        }
+    } else {
+        // Normal start from beginning - fetch chunk 1 after chunk 0
+        if (lastChunkIndex >= 0 && !pendingChunks.has(1)) {
+            fetchAndAppendChunk(1);
+        }
+    }
 
     // During catch-up, fetch next chunks progressively
     if (window.shouldSeekToLive && lastChunkIndex >= 0) {
