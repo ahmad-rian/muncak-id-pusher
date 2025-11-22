@@ -1,9 +1,13 @@
 // generate-pdf-report.js
 // Script untuk generate PDF report dari hasil testing Artillery
 
-const PDFDocument = require('pdfkit');
-const fs = require('fs');
-const path = require('path');
+import PDFDocument from 'pdfkit';
+import fs from 'fs';
+import path from 'path';
+import { fileURLToPath } from 'url';
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
 
 // Fungsi untuk format angka
 function formatNumber(num) {
@@ -437,8 +441,9 @@ function generatePDFReport(jsonDataFile, outputFile) {
     console.log(`PDF report generated: ${outputFile}`);
 }
 
+
 // Main execution
-if (require.main === module) {
+if (import.meta.url === `file://${process.argv[1]}`) {
     const args = process.argv.slice(2);
 
     if (args.length === 0) {
@@ -467,4 +472,4 @@ if (require.main === module) {
     }
 }
 
-module.exports = { generatePDFReport };
+export { generatePDFReport };

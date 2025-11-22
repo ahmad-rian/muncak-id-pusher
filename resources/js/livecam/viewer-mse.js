@@ -133,24 +133,50 @@ async function cleanupMediaSource() {
     // Remove SourceBuffer event listeners and buffered data
     if (sourceBuffer) {
         try {
-            // Wait for any pending updates to complete
-            if (sourceBuffer.updating) {
+            // Wait for any pending updates
+            if (sourceBuffer && sourceBuffer.updating) {
                 await new Promise(resolve => {
-                    sourceBuffer.addEventListener('updateend', resolve, { once: true });
+                    const checkUpdate = setInterval(() => {
+                        if (!sourceBuffer || !sourceBuffer.updating) {
+                            clearInterval(checkUpdate);
+                            resolve();
+                        }
+                    }, 100);
+
+                    // Timeout after 2 seconds
+                    setTimeout(() => {
+                        clearInterval(checkUpdate);
+                        resolve();
+                    }, 2000);
                 });
             }
 
-            // Remove all buffered data
-            if (sourceBuffer.buffered.length > 0) {
-                const start = sourceBuffer.buffered.start(0);
-                const end = sourceBuffer.buffered.end(sourceBuffer.buffered.length - 1);
-                sourceBuffer.remove(start, end);
-                console.log('🗑️ Removing buffered data from', start, 'to', end);
+            // Remove buffered data
+            if (sourceBuffer && mediaSource && mediaSource.readyState === 'open') {
+                try {
+                    const buffered = sourceBuffer.buffered;
+                    if (buffered.length > 0) {
+                        const start = buffered.start(0);
+                        const end = buffered.end(buffered.length - 1);
+                        console.log(`🗑️ Removing buffered data from ${start} to ${end}`);
 
-                // Wait for remove operation to complete
-                await new Promise(resolve => {
-                    sourceBuffer.addEventListener('updateend', resolve, { once: true });
-                });
+                        if (!sourceBuffer.updating) {
+                            sourceBuffer.remove(start, end);
+
+                            // Wait for remove to complete
+                            await new Promise(resolve => {
+                                if (sourceBuffer) {
+                                    sourceBuffer.addEventListener('updateend', resolve, { once: true });
+                                    setTimeout(resolve, 1000); // Timeout
+                                } else {
+                                    resolve();
+                                }
+                            });
+                        }
+                    }
+                } catch (err) {
+                    console.log('Error removing buffer:', err.message);
+                }
             }
         } catch (err) {
             console.log('Could not remove buffer:', err.message);
@@ -160,14 +186,12 @@ async function cleanupMediaSource() {
     // Close MediaSource
     if (mediaSource) {
         try {
-            if (mediaSource.readyState === 'open') {
+            if (mediaSource.readyState === 'open' && sourceBuffer && !sourceBuffer.updating) {
                 mediaSource.endOfStream();
             }
         } catch (err) {
             console.log('MediaSource already closed:', err.message);
         }
-        mediaSource = null;
-        sourceBuffer = null;
     }
 
     // Clear video source and reset
@@ -177,6 +201,10 @@ async function cleanupMediaSource() {
         video.load();
         video.currentTime = 0;
     }
+
+    // Nullify references
+    mediaSource = null;
+    sourceBuffer = null;
 }
 
 // Initialize MediaSource
@@ -200,12 +228,19 @@ function initializeMediaSource() {
     mediaSource.addEventListener('sourceopen', () => {
         console.log('✅ MediaSource opened');
 
+        // Prevent multiple initialization
+        if (sourceBuffer) {
+            console.log('⚠️ SourceBuffer already exists, skipping initialization');
+            return;
+        }
+
         try {
             const mime = 'video/webm; codecs="vp8"';
             if (!window.MediaSource.isTypeSupported(mime)) {
                 alert('WebM VP8 not supported in this browser');
                 return;
             }
+
             sourceBuffer = mediaSource.addSourceBuffer(mime);
             sourceBuffer.mode = 'sequence';
 
@@ -218,8 +253,23 @@ function initializeMediaSource() {
                 console.error('❌ SourceBuffer error:', e);
                 sbErrorRetries += 1;
 
+                // Stop all ongoing operations
+                isUpdating = false;
+
+                // Clear intervals
+                if (fetchInterval) {
+                    clearInterval(fetchInterval);
+                    fetchInterval = null;
+                }
+
                 // Cleanup properly (async)
                 await cleanupMediaSource();
+
+                // Reset state for retry
+                sourceBuffer = null;
+                appendQueue = [];
+                pendingChunks.clear();
+                lastChunkIndex = -1;
 
                 // Retry with exponential backoff
                 if (sbErrorRetries <= 3 && isStreamActive) {
@@ -247,7 +297,21 @@ function initializeMediaSource() {
 
         } catch (err) {
             console.error('❌ Failed to create SourceBuffer:', err);
-            alert('Failed to initialize video player: ' + err.message);
+
+            // Cleanup and retry
+            sourceBuffer = null;
+            if (sbErrorRetries < 3 && isStreamActive) {
+                sbErrorRetries++;
+                const delay = 1000 * sbErrorRetries;
+                console.log(`🔄 Retrying after SourceBuffer creation error in ${delay}ms`);
+                setTimeout(() => {
+                    if (isStreamActive) {
+                        initializeMediaSource();
+                    }
+                }, delay);
+            } else {
+                alert('Failed to initialize video player: ' + err.message);
+            }
         }
     });
 
@@ -257,6 +321,7 @@ function initializeMediaSource() {
 
     mediaSource.addEventListener('sourceclose', () => {
         console.log('🔌 MediaSource closed');
+        sourceBuffer = null;
     });
 }
 
@@ -285,20 +350,21 @@ function startFetching() {
         }
     }, pollingInterval);
 
-    // During catch-up, aggressively fetch multiple chunks ahead
+    // During catch-up, fetch chunks ahead but not too aggressively
     if (window.shouldSeekToLive) {
-        console.log('🚀 Catch-up mode: fetching multiple chunks in parallel');
-        // Fetch next 3 chunks immediately (after chunk 0)
+        console.log('🚀 Catch-up mode: fetching chunks progressively');
+        // Fetch next 2 chunks (reduced from 3 to avoid race condition)
         setTimeout(() => {
             if (lastChunkIndex >= 0 && window.shouldSeekToLive) {
-                for (let i = 1; i <= 3; i++) {
+                for (let i = 1; i <= 2; i++) {
                     const nextIdx = lastChunkIndex + i;
                     if (!pendingChunks.has(nextIdx)) {
-                        fetchAndAppendChunk(nextIdx);
+                        // Stagger the fetches to avoid overwhelming
+                        setTimeout(() => fetchAndAppendChunk(nextIdx), i * 300);
                     }
                 }
             }
-        }, 500);
+        }, 800); // Increased delay to let chunk 0 process first
 
         if (typeof window.fastStartIndex === 'number') {
             const fastStartCheck = setInterval(() => {
@@ -310,15 +376,16 @@ function startFetching() {
                     clearInterval(fastStartCheck);
                     if (!pendingChunks.has(window.fastStartIndex)) {
                         fetchAndAppendChunk(window.fastStartIndex);
-                        for (let i = 1; i <= 2; i++) {
-                            const idx = window.fastStartIndex + i;
+                        // Only fetch 1 chunk ahead (reduced from 2)
+                        setTimeout(() => {
+                            const idx = window.fastStartIndex + 1;
                             if (!pendingChunks.has(idx)) {
                                 fetchAndAppendChunk(idx);
                             }
-                        }
+                        }, 500);
                     }
                 }
-            }, 200);
+            }, 300); // Increased interval for more stable checking
         }
     }
 }
@@ -342,6 +409,13 @@ async function fetchAndAppendChunk(index) {
         return;
     }
 
+    // Don't fetch chunks too far ahead (max 2 chunks ahead of last processed)
+    // This prevents race condition where we try to fetch chunks not yet generated
+    if (lastChunkIndex >= 0 && index > lastChunkIndex + 2) {
+        console.log(`⏸️ Chunk ${index} too far ahead (last: ${lastChunkIndex}), waiting...`);
+        return;
+    }
+
     // Mark as pending
     pendingChunks.add(index);
 
@@ -360,12 +434,16 @@ async function fetchAndAppendChunk(index) {
                 return;
             }
 
+            // Increase retry count to 5 and use longer delays
             const retryCount = retryCounts.get(index) || 0;
-            if (retryCount < 3) {
+            if (retryCount < 5) {
                 retryCounts.set(index, retryCount + 1);
-                setTimeout(() => fetchAndAppendChunk(index), 500 * (retryCount + 1));
+                // Progressive delay: 1s, 2s, 3s, 4s, 5s
+                const delay = 1000 * (retryCount + 1);
+                console.log(`🔄 Will retry chunk ${index} in ${delay}ms (attempt ${retryCount + 1}/5)`);
+                setTimeout(() => fetchAndAppendChunk(index), delay);
             } else {
-                console.log(`❌ Giving up on chunk ${index} after 3 retries`);
+                console.log(`❌ Giving up on chunk ${index} after 5 retries`);
                 retryCounts.delete(index);
             }
             return;
