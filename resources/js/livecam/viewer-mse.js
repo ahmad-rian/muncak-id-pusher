@@ -335,7 +335,8 @@ function startFetching() {
 
     // Set up polling interval FIRST (before any early returns)
     // This ensures continuous chunk fetching even after chunk 0
-    const pollingInterval = window.shouldSeekToLive ? 500 : 2000;
+    // Use faster polling in catch-up mode for rapid sequential fetching
+    const pollingInterval = window.shouldSeekToLive ? 200 : 2000;
 
     fetchInterval = setInterval(() => {
         if (!isStreamActive || !mediaSource || mediaSource.readyState !== 'open') {
@@ -344,18 +345,37 @@ function startFetching() {
             return;
         }
 
-        // Special handling for catch-up mode after chunk 0
-        // Jump to recent chunks instead of sequentially fetching from chunk 1
-        if (window.shouldSeekToLive && lastChunkIndex >= 0 && typeof window.fastStartIndex === 'number') {
-            // Only jump if we haven't reached the fast start chunk yet
-            if (lastChunkIndex < window.fastStartIndex && !pendingChunks.has(window.fastStartIndex)) {
-                console.log(`⏩ Jumping from chunk ${lastChunkIndex} to chunk ${window.fastStartIndex} (catch-up mode)`);
-                fetchAndAppendChunk(window.fastStartIndex);
-                return;
+        // In catch-up mode, fetch multiple chunks in parallel (up to 3 at once)
+        // This builds buffer quickly while maintaining sequence integrity
+        if (window.shouldSeekToLive && typeof window.fastStartIndex === 'number') {
+            const maxParallel = 3; // Fetch up to 3 chunks simultaneously
+            let fetchedCount = 0;
+
+            for (let i = 1; i <= maxParallel; i++) {
+                const nextIdx = lastChunkIndex + i;
+
+                // Stop if we've caught up to the target
+                if (nextIdx > window.fastStartIndex) {
+                    break;
+                }
+
+                // Fetch if not already pending
+                if (!pendingChunks.has(nextIdx)) {
+                    fetchAndAppendChunk(nextIdx);
+                    fetchedCount++;
+                }
             }
+
+            // If we've caught up, switch to normal mode
+            if (lastChunkIndex >= window.fastStartIndex) {
+                console.log(`✅ Caught up to chunk ${lastChunkIndex}, switching to normal mode`);
+                window.shouldSeekToLive = false; // Disable catch-up mode
+            }
+
+            return;
         }
 
-        // Normal sequential fetching
+        // Normal sequential fetching (one chunk at a time)
         const nextIndex = lastChunkIndex + 1;
         if (!pendingChunks.has(nextIndex)) {
             fetchAndAppendChunk(nextIndex);
@@ -446,15 +466,13 @@ async function fetchAndAppendChunk(index) {
         return;
     }
 
-    // Don't fetch chunks too far ahead (max 2 chunks ahead of last processed)
-    // This prevents race condition where we try to fetch chunks not yet generated
-    // EXCEPTION: Allow jumping to fastStartIndex in catch-up mode
-    const isCatchupJump = window.shouldSeekToLive &&
-        typeof window.fastStartIndex === 'number' &&
-        index === window.fastStartIndex;
+    // Don't fetch chunks too far ahead to prevent race conditions
+    // In catch-up mode: allow up to 3 chunks ahead (for parallel fetching)
+    // In normal mode: allow up to 2 chunks ahead
+    const maxAhead = window.shouldSeekToLive ? 3 : 2;
 
-    if (lastChunkIndex >= 0 && index > lastChunkIndex + 2 && !isCatchupJump) {
-        console.log(`⏸️ Chunk ${index} too far ahead (last: ${lastChunkIndex}), waiting...`);
+    if (lastChunkIndex >= 0 && index > lastChunkIndex + maxAhead) {
+        console.log(`⏸️ Chunk ${index} too far ahead (last: ${lastChunkIndex}, max: ${maxAhead}), waiting...`);
         return;
     }
 
