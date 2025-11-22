@@ -390,11 +390,16 @@ async function fetchAndAppendChunk(index) {
     }
 
     // Don't fetch chunks too far ahead to prevent race conditions
-    // In catch-up mode: allow up to 3 chunks ahead (for parallel fetching)
+    // EXCEPTION: Allow fetching fastStartIndex in catch-up mode (for initial jump)
+    const isFastStartJump = window.shouldSeekToLive &&
+        typeof window.fastStartIndex === 'number' &&
+        index === window.fastStartIndex;
+
+    // In catch-up mode: allow up to 3 chunks ahead (for sequential after jump)
     // In normal mode: allow up to 2 chunks ahead
     const maxAhead = window.shouldSeekToLive ? 3 : 2;
 
-    if (lastChunkIndex >= 0 && index > lastChunkIndex + maxAhead) {
+    if (lastChunkIndex >= 0 && index > lastChunkIndex + maxAhead && !isFastStartJump) {
         console.log(`⏸️ Chunk ${index} too far ahead (last: ${lastChunkIndex}, max: ${maxAhead}), waiting...`);
         return;
     }
