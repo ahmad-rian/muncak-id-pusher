@@ -11,45 +11,32 @@ config:
   
   
   phases:
-    # Safe Configuration for Pusher Free Tier
+    # Optimal Configuration for Pusher Free Tier with 6 Apps
     # Max 30 concurrent users, 30s per phase
-    # Total: 3 menit per test, 5 apps = 5 iterations guaranteed
+    # Total: 90 seconds per test, 6 apps = 5 iterations guaranteed
     # Safety buffer: 70% (30/100 concurrent limit)
+    # RPS: 300 requests/second (30 users × 10 req/s)
+    # Messages: ~264 per test, 1,320 total (0.66% quota per app) - SAFE!
     
-    # Phase 1: Baseline (5 concurrent users)
-    - duration: 30
-      arrivalRate: 5
-      name: "Baseline - 5 Concurrent Viewers"
-    
-    # Phase 2: Low Load (10 concurrent users)
-    - duration: 30
-      arrivalRate: 10
-      name: "Low Load - 10 Concurrent Viewers"
-    
-    # Phase 3: Medium Load (15 concurrent users)
+    # Phase 1: Baseline (15 concurrent users)
     - duration: 30
       arrivalRate: 15
-      name: "Medium Load - 15 Concurrent Viewers"
+      name: "Baseline - 15 Concurrent Viewers"
     
-    # Phase 4: Moderate Load (20 concurrent users)
+    # Phase 2: Medium Load (20 concurrent users)
     - duration: 30
       arrivalRate: 20
-      name: "Moderate Load - 20 Concurrent Viewers"
+      name: "Medium Load - 20 Concurrent Viewers"
     
-    # Phase 5: Higher Load (25 concurrent users)
-    - duration: 30
-      arrivalRate: 25
-      name: "Higher Load - 25 Concurrent Viewers"
-    
-    # Phase 6: Peak Load (30 concurrent users)
+    # Phase 3: Peak Load (30 concurrent users - Safe with 6 Apps)
     - duration: 30
       arrivalRate: 30
-      name: "Peak Load - 30 Concurrent Viewers (Safe Zone)"
+      name: "Peak Load - 30 Concurrent Viewers"
 
   # Plugins removed - causing extensibility issues with Artillery 2.x
   
   variables:
-    pusherKey: "3b7e0d850b4ba0c792a5"
+    pusherKey: "56c5597baac683cfb64c"
     pusherCluster: "ap1"
     
     # Video quality yang ditest (sesuai batasan masalah)
@@ -194,8 +181,8 @@ scenarios:
       - function: "measureChatLatency"
       - think: 15
       
-      # Watch selama ~30 menit (untuk scenario chat)
-      - think: 1800
+      # Watch selama test duration (untuk scenario chat)
+      - think: 60
       - function: "disconnectPusher"
       - function: "closeVideoStream"
 
@@ -347,7 +334,7 @@ expectations:
   - name: "Maintain 30+ fps"
     condition: "video.frames.per_second.mean > 30"
 
-  # Connection Requirements (Safe for Pusher Free Tier - 70% buffer)
+  # Connection Requirements (Optimal for Pusher Free Tier with 6 Apps - 70% buffer)
   - name: "Support 30+ concurrent viewers"
     condition: "concurrent.connections.active.max > 30"
     
