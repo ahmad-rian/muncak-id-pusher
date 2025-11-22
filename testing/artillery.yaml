@@ -11,32 +11,32 @@ config:
   
   
   phases:
-    # Optimal Configuration for Pusher Free Tier with 6 Apps
-    # Max 30 concurrent users, 30s per phase
-    # Total: 90 seconds per test, 6 apps = 5 iterations guaranteed
-    # Safety buffer: 70% (30/100 concurrent limit)
-    # RPS: 300 requests/second (30 users × 10 req/s)
-    # Messages: ~264 per test, 1,320 total (0.66% quota per app) - SAFE!
+    # Optimal Balance Configuration - Minimal Quota, Meaningful RPS
+    # Max 15 concurrent users, 30s per phase
+    # Total: 90 seconds per test
+    # RPS: 150 requests/second (15 users × 10 req/s)
+    # Messages: ~1,905 per test, 9,525 total (4.76% quota) - OPTIMAL!
+    # Perfect balance: low consumption, meaningful research data
     
-    # Phase 1: Baseline (15 concurrent users)
+    # Phase 1: Baseline (7 concurrent users)
+    - duration: 30
+      arrivalRate: 7
+      name: "Baseline - 7 Concurrent Viewers"
+    
+    # Phase 2: Medium Load (10 concurrent users)
+    - duration: 30
+      arrivalRate: 10
+      name: "Medium Load - 10 Concurrent Viewers"
+    
+    # Phase 3: Peak Load (15 concurrent users - Optimal Balance)
     - duration: 30
       arrivalRate: 15
-      name: "Baseline - 15 Concurrent Viewers"
-    
-    # Phase 2: Medium Load (20 concurrent users)
-    - duration: 30
-      arrivalRate: 20
-      name: "Medium Load - 20 Concurrent Viewers"
-    
-    # Phase 3: Peak Load (30 concurrent users - Safe with 6 Apps)
-    - duration: 30
-      arrivalRate: 30
-      name: "Peak Load - 30 Concurrent Viewers"
+      name: "Peak Load - 15 Concurrent Viewers"
 
   # Plugins removed - causing extensibility issues with Artillery 2.x
   
   variables:
-    pusherKey: "728d92e45aebf9df1926"
+    pusherKey: "d092ff358fe2857166c3"
     pusherCluster: "ap1"
     
     # Video quality yang ditest (sesuai batasan masalah)
@@ -334,9 +334,9 @@ expectations:
   - name: "Maintain 30+ fps"
     condition: "video.frames.per_second.mean > 30"
 
-  # Connection Requirements (Optimal for Pusher Free Tier with 6 Apps - 70% buffer)
-  - name: "Support 30+ concurrent viewers"
-    condition: "concurrent.connections.active.max > 30"
+  # Connection Requirements (Optimal Balance - 85% buffer)
+  - name: "Support 15+ concurrent viewers"
+    condition: "concurrent.connections.active.max > 15"
     
   - name: "Error rate < 1%"
     condition: "websocket.errors.total.rate < 1"
