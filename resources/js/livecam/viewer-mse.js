@@ -9,6 +9,7 @@ let mediaSource = null;
 let sourceBuffer = null;
 let sbErrorRetries = 0;
 let queue = [];
+let appendQueue = []; // Proper declaration to avoid ReferenceError
 let isUpdating = false;
 let lastChunkIndex = -1;
 let fetchInterval = null;

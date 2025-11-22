@@ -12,18 +12,18 @@ YELLOW='\033[1;33m'
 RED='\033[0;31m'
 NC='\033[0m'
 
-# Configuration - 7 Pusher Apps (6 for Testing + 1 for Production)
-# Apps 1-6: Dedicated for load testing (auto-rotation)
-# App 7: Production only (not used in testing)
+# Configuration - 5 Fresh Pusher Apps for Testing
+# Auto-switch when over quota detected (real-time monitoring)
+# All apps are NEW (fresh, 0% quota)
+# Production uses separate app (2081450 in .env)
 declare -a PUSHER_APPS=(
-    "728d92e45aebf9df1926:2081441"  # App 1 (Testing)
-    "20651eee1d736b23b0b2:2081444"  # App 2 (Testing)
-    "295a31241906c1e9a4a0:2081445"  # App 3 (Testing)
-    "d092ff358fe2857166c3:2081449"  # App 4 (Testing)
-    "34e3c521c3564f503ef3:2081455"  # App 5 (Testing)
-    "29daf4f957ff61f5f88b:2081450"  # App 6 (Testing - Backup)
+    "bda25e63282272c095ee:2081501"  # App 1 (NEW - Fresh)
+    "75407c8c125df6d5f53e:2081506"  # App 2 (NEW - Fresh)
+    "55c8aae988a23bf9d99a:2081507"  # App 3 (NEW - Fresh)
+    "e7209de096b4f303f8f6:2081510"  # App 4 (NEW - Fresh)
+    "1831b6a367a9d3df74b5:2081514"  # App 5 (NEW - Fresh)
 )
-# App 7 (2081450) reserved for production - update .env separately
+# Production app (2081450) NOT in testing array - isolated ✅
 
 ITERATIONS=5
 RESULTS_DIR="./results/multi-app-test"
