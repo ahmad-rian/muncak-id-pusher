@@ -448,7 +448,12 @@ async function fetchAndAppendChunk(index) {
 
     // Don't fetch chunks too far ahead (max 2 chunks ahead of last processed)
     // This prevents race condition where we try to fetch chunks not yet generated
-    if (lastChunkIndex >= 0 && index > lastChunkIndex + 2) {
+    // EXCEPTION: Allow jumping to fastStartIndex in catch-up mode
+    const isCatchupJump = window.shouldSeekToLive &&
+        typeof window.fastStartIndex === 'number' &&
+        index === window.fastStartIndex;
+
+    if (lastChunkIndex >= 0 && index > lastChunkIndex + 2 && !isCatchupJump) {
         console.log(`⏸️ Chunk ${index} too far ahead (last: ${lastChunkIndex}), waiting...`);
         return;
     }
