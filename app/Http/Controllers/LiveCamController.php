@@ -182,6 +182,18 @@ class LiveCamController extends Controller
         // Broadcast stream started event
         broadcast(new StreamStarted($stream))->toOthers();
 
+        // Trigger immediate classification via HTTP (async)
+        try {
+            \Log::info('Triggering immediate classification for stream: ' . $stream->id);
+
+            // Use HTTP client to call classification endpoint asynchronously
+            \Illuminate\Support\Facades\Http::timeout(1)->async()->post(url("/api/v1/classifications/stream/{$stream->id}/classify"));
+
+            \Log::info('Classification triggered for stream: ' . $stream->id);
+        } catch (\Exception $e) {
+            \Log::error('Failed to trigger classification: ' . $e->getMessage());
+        }
+
         return response()->json([
             'success' => true,
             'stream' => $stream,
@@ -226,7 +238,7 @@ class LiveCamController extends Controller
             // Broadcast stream ended event
             try {
                 \Log::info('Broadcasting stream ended event', ['stream_id' => $stream->id]);
-                broadcast(new StreamEnded($stream))->toOthers();
+                broadcast(new StreamEnded($stream)); // Send to ALL (including viewers)
                 \Log::info('Stream ended event broadcasted successfully', ['stream_id' => $stream->id]);
             } catch (\Exception $e) {
                 \Log::error('Failed to broadcast stream ended event', [
@@ -966,19 +978,27 @@ class LiveCamController extends Controller
                 'size' => filesize($chunkPath)
             ]);
 
-            // Notify viewers via Pusher
-            event(new \App\Events\NewChunk($stream->id, $chunkIndex));
 
-            // Clean up old chunks (keep last 30 chunks = ~60 seconds with 2s chunks)
-            // This allows viewers to join mid-stream and catch up
-            // Only start cleaning after we have enough chunks
-            if ($chunkIndex > 30) {
-                $this->cleanupOldChunks($stream->id, $chunkIndex - 30);
+            // Broadcast chunk availability (DISABLED - using LiveKit now)
+            // event(new \App\Events\NewChunkAvailable($stream->id, $chunkIndex, '720p'));
+
+            // Update stream metadata
+            $stream->update([
+                'latest_chunk_index' => $chunkIndex,
+                'updated_at' => now()
+            ]);
+
+            // Cleanup old chunks (keep last 50)
+            if ($chunkIndex > 50) {
+                $oldChunkPath = "{$streamDir}/chunk_" . ($chunkIndex - 50) . ".webm";
+                if (file_exists($oldChunkPath)) {
+                    @unlink($oldChunkPath);
+                }
             }
+
             return response()->json([
                 'success' => true,
-                'index' => $chunkIndex,
-                'size' => filesize($chunkPath)
+                'chunk_index' => $chunkIndex
             ]);
 
         } catch (\Exception $e) {
@@ -988,7 +1008,8 @@ class LiveCamController extends Controller
             ]);
 
             return response()->json([
-                'error' => 'Failed to upload chunk: ' . $e->getMessage()
+                'success' => false,
+                'error' => 'Failed to upload chunk'
             ], 500);
         }
     }
@@ -996,7 +1017,7 @@ class LiveCamController extends Controller
     /**
      * Serve video chunk to viewer
      */
-    public function getChunk(LiveStream $stream, $index)
+    public function getChunk(Request $request, LiveStream $stream, $index)
     {
         // Prevent serving chunks if stream is not live
         if (!$stream->isLive()) {
@@ -1015,34 +1036,16 @@ class LiveCamController extends Controller
         }
 
         // Check if chunk is from current stream session
-        // Chunks should be created after stream started
         $chunkModTime = filemtime($chunkPath);
         $streamStartTime = $stream->started_at ? $stream->started_at->timestamp : 0;
 
         // If chunk was created before stream started, it's from old session
         if ($chunkModTime < $streamStartTime) {
-            \Log::warning('Chunk is from old stream session', [
+            \Log::warning('Chunk from old session requested', [
                 'stream_id' => $stream->id,
-                'chunk_index' => $index,
-                'chunk_time' => date('Y-m-d H:i:s', $chunkModTime),
-                'stream_started' => $stream->started_at
+                'chunk_index' => $index
             ]);
-
-            // Delete old chunk
-            @unlink($chunkPath);
-            return response('Chunk from old session', 404);
-        }
-
-        // Additional safety: reject chunks older than 2 minutes (except init chunk 0)
-        // Keep init segment available throughout the session
-        $chunkAge = time() - $chunkModTime;
-        if ((int) $index !== 0 && $chunkAge > 120) {
-            \Log::warning('Chunk is too old', [
-                'stream_id' => $stream->id,
-                'chunk_index' => $index,
-                'age_seconds' => $chunkAge
-            ]);
-            return response('Chunk too old', 404);
+            return response('', 404);
         }
 
         return response()->file($chunkPath, [
@@ -1059,6 +1062,8 @@ class LiveCamController extends Controller
     public function getStatus(LiveStream $stream)
     {
         $latestChunkIndex = -1;
+        $oldestChunkIndex = -1;
+        $hlsPlaylistUrl = null;
 
         // Get latest chunk index if stream is live
         if ($stream->isLive()) {
@@ -1075,41 +1080,254 @@ class LiveCamController extends Controller
                         preg_match('/chunk_(\d+)\.webm$/', $path, $matches);
                         return isset($matches[1]) ? (int) $matches[1] : -1;
                     }, $chunks);
-                    $latestChunkIndex = max($indices);
+
+                    // Filter valid indices
+                    $indices = array_filter($indices, fn($i) => $i >= 0);
+
+                    if (!empty($indices)) {
+                        $latestChunkIndex = max($indices);
+
+                        // Find oldest PLAYABLE chunk (exclude chunk 0 - init segment)
+                        $playableIndices = array_filter($indices, fn($i) => $i > 0);
+                        if (!empty($playableIndices)) {
+                            $oldestChunkIndex = min($playableIndices);
+                        } else {
+                            // Only chunk 0 exists (stream just started)
+                            $oldestChunkIndex = 0;
+                        }
+                    }
                 }
             }
+
+            // HLS playlist URL
+            $hlsPlaylistUrl = url("/hls/{$stream->id}/master.m3u8");
         }
 
         return response()->json([
             'is_live' => $stream->isLive(),
-            'status' => $stream->status,
-            'viewer_count' => $stream->viewer_count,
-            'started_at' => $stream->started_at,
             'latest_chunk_index' => $latestChunkIndex,
+            'oldest_chunk_index' => $oldestChunkIndex, // Oldest PLAYABLE chunk
+            'hls_playlist_url' => $hlsPlaylistUrl,
+            'viewer_count' => $stream->viewer_count ?? 0,
         ]);
     }
 
     /**
-     * Clean up old chunks
+     * Upload HLS chunk - Convert WebM to HLS segments
      */
-    private function cleanupOldChunks($streamId, $beforeIndex)
+    public function uploadHLSChunk(Request $request, LiveStream $stream)
     {
-        if ($beforeIndex < 0) {
-            return;
+        if (!auth()->check()) {
+            return response()->json(['error' => 'Unauthorized'], 401);
         }
 
-        $streamDir = storage_path("app/live-streams/{$streamId}");
-
-        if (!file_exists($streamDir)) {
-            return;
+        if ($stream->broadcaster_id && $stream->broadcaster_id !== auth()->id()) {
+            return response()->json(['error' => 'Unauthorized'], 403);
         }
 
-        for ($i = 1; $i <= $beforeIndex; $i++) {
-            $chunkPath = "{$streamDir}/chunk_{$i}.webm";
-            if (file_exists($chunkPath)) {
-                @unlink($chunkPath);
+        $validator = Validator::make($request->all(), [
+            'chunk' => 'required|file',
+            'index' => 'required|integer|min:0',
+            'timestamp' => 'required|integer',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        try {
+            $chunkIndex = $request->input('index');
+            $chunkFile = $request->file('chunk');
+
+            $streamDir = storage_path("app/live-streams/{$stream->id}/hls");
+            if (!file_exists($streamDir)) {
+                mkdir($streamDir, 0755, true);
+            }
+
+            // Save WebM chunk temporarily
+            $tempWebmPath = "{$streamDir}/temp_chunk_{$chunkIndex}.webm";
+            $chunkFile->move(dirname($tempWebmPath), basename($tempWebmPath));
+
+            // Convert to HLS segment using FFmpeg
+            $segmentPath = "{$streamDir}/segment_{$chunkIndex}.ts";
+
+            // FIXED FFmpeg command: Transcode VP8 → H.264 for HLS compatibility
+            // -c:v libx264: Encode video to H.264
+            // -preset ultrafast: Fastest encoding for live streaming
+            // -tune zerolatency: Optimize for low latency
+            // -c:a aac: Encode audio to AAC (HLS standard)
+            // -f mpegts: Output format MPEG-TS
+            $ffmpegCmd = sprintf(
+                'ffmpeg -i %s -c:v libx264 -preset ultrafast -tune zerolatency -c:a aac -b:a 128k -f mpegts %s 2>&1',
+                escapeshellarg($tempWebmPath),
+                escapeshellarg($segmentPath)
+            );
+
+            exec($ffmpegCmd, $output, $returnCode);
+
+            if ($returnCode !== 0) {
+                Log::error("FFmpeg conversion failed", [
+                    'stream_id' => $stream->id,
+                    'index' => $chunkIndex,
+                    'output' => implode("\n", array_slice($output, -10)) // Last 10 lines only
+                ]);
+
+                // Fallback: Save WebM directly (viewer will need HLS.js)
+                copy($tempWebmPath, str_replace('.ts', '.webm', $segmentPath));
+                $segmentPath = str_replace('.ts', '.webm', $segmentPath);
+            }
+
+            // Clean up temp file
+            @unlink($tempWebmPath);
+
+            Log::info("HLS segment created", [
+                'stream_id' => $stream->id,
+                'index' => $chunkIndex,
+                'size' => filesize($segmentPath),
+                'format' => pathinfo($segmentPath, PATHINFO_EXTENSION)
+            ]);
+
+            // Update stream metadata
+            $stream->update([
+                'latest_chunk_index' => $chunkIndex,
+                'updated_at' => now()
+            ]);
+
+            // Cleanup old segments FIRST (keep last 30)
+            $minSegmentToKeep = max(0, $chunkIndex - 30);
+            // Clean both .ts and .webm files
+            $allSegments = array_merge(
+                glob("{$streamDir}/segment_*.ts"),
+                glob("{$streamDir}/segment_*.webm")
+            );
+            foreach ($allSegments as $segmentPath) {
+                if (preg_match('/segment_(\d+)\.(ts|webm)$/', $segmentPath, $matches)) {
+                    $idx = (int) $matches[1];
+                    if ($idx < $minSegmentToKeep) {
+                        @unlink($segmentPath);
+                        Log::info("Deleted old HLS segment", [
+                            'stream_id' => $stream->id,
+                            'segment_index' => $idx
+                        ]);
+                    }
+                }
+            }
+
+            // THEN update playlist (after cleanup, so it only lists existing segments)
+            $this->updateHLSPlaylist($stream, $chunkIndex);
+
+            // Broadcast segment availability
+            event(new \App\Events\NewHLSSegmentAvailable(
+                $stream->id,
+                $chunkIndex
+            ));
+
+            return response()->json([
+                'success' => true,
+                'chunk_index' => $chunkIndex
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error("HLS chunk upload failed", [
+                'stream_id' => $stream->id,
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to upload HLS chunk'
+            ], 500);
+        }
+    }
+
+    private function updateHLSPlaylist(LiveStream $stream, $latestChunkIndex)
+    {
+        $streamDir = storage_path("app/live-streams/{$stream->id}/hls");
+        $playlistPath = "{$streamDir}/playlist.m3u8";
+
+        // Get all available segments (both .ts and .webm)
+        $segments = array_merge(
+            glob("{$streamDir}/segment_*.ts"),
+            glob("{$streamDir}/segment_*.webm")
+        );
+        $segmentIndices = [];
+
+        foreach ($segments as $segmentPath) {
+            if (preg_match('/segment_(\d+)\.(ts|webm)$/', basename($segmentPath), $matches)) {
+                $index = (int) $matches[1];
+                $ext = $matches[2];
+                $segmentIndices[$index] = $ext; // Store extension
             }
         }
+
+        ksort($segmentIndices); // Sort by index
+
+        // Generate playlist
+        $playlist = "#EXTM3U\n";
+        $playlist .= "#EXT-X-VERSION:3\n";
+        $playlist .= "#EXT-X-TARGETDURATION:2\n"; // 1-2 second segments
+        $playlist .= "#EXT-X-MEDIA-SEQUENCE:" . (empty($segmentIndices) ? 0 : min(array_keys($segmentIndices))) . "\n";
+
+        foreach ($segmentIndices as $index => $ext) {
+            $playlist .= "#EXTINF:1.0,\n"; // 1 second duration
+            $playlist .= "segment_{$index}.{$ext}\n"; // Use actual extension
+        }
+
+        file_put_contents($playlistPath, $playlist);
+
+        Log::info("HLS playlist updated", [
+            'stream_id' => $stream->id,
+            'segments' => count($segmentIndices),
+            'latest' => $latestChunkIndex
+        ]);
+    }
+
+    /**
+     * Serve HLS playlist
+     */
+    public function getHLSPlaylist(LiveStream $stream)
+    {
+        $playlistPath = storage_path("app/live-streams/{$stream->id}/hls/playlist.m3u8");
+
+        if (!file_exists($playlistPath)) {
+            return response('Playlist not found', 404);
+        }
+
+        return response(file_get_contents($playlistPath), 200, [
+            'Content-Type' => 'application/vnd.apple.mpegurl',
+            'Cache-Control' => 'no-cache, no-store, must-revalidate',
+            'Pragma' => 'no-cache',
+            'Expires' => '0'
+        ]);
+    }
+
+    /**
+     * Serve HLS segment or playlist
+     */
+    public function getHLSSegment(LiveStream $stream, $segmentName)
+    {
+        $segmentPath = storage_path("app/live-streams/{$stream->id}/hls/{$segmentName}");
+
+        if (!file_exists($segmentPath)) {
+            return response('Segment not found', 404);
+        }
+
+        // Determine content type based on file extension
+        $contentType = 'video/webm'; // Default for .webm segments
+        $cacheControl = 'public, max-age=31536000'; // Long cache for segments
+
+        if (str_ends_with($segmentName, '.m3u8')) {
+            $contentType = 'application/vnd.apple.mpegurl';
+            $cacheControl = 'no-cache'; // Don't cache playlist - it updates frequently
+        } elseif (str_ends_with($segmentName, '.ts')) {
+            $contentType = 'video/MP2T';
+        }
+
+        return response(file_get_contents($segmentPath), 200, [
+            'Content-Type' => $contentType,
+            'Cache-Control' => $cacheControl,
+            'Accept-Ranges' => 'bytes'
+        ]);
     }
 
     private function cleanupAllChunks($streamId)
@@ -1118,9 +1336,107 @@ class LiveCamController extends Controller
         if (!file_exists($streamDir)) {
             return;
         }
+
+        // Clean WebM chunks
         $chunks = glob($streamDir . '/chunk_*.webm');
         foreach ($chunks as $chunkPath) {
             @unlink($chunkPath);
+        }
+
+        // Clean HLS segments
+        $hlsDir = "{$streamDir}/hls";
+        if (file_exists($hlsDir)) {
+            $segments = glob($hlsDir . '/segment_*.ts');
+            foreach ($segments as $segmentPath) {
+                @unlink($segmentPath);
+            }
+            $playlist = "{$hlsDir}/playlist.m3u8";
+            if (file_exists($playlist)) {
+                @unlink($playlist);
+            }
+        }
+    }
+
+    /**
+     * ========================================
+     * LIVEKIT INTEGRATION METHODS
+     * ========================================
+     */
+
+    /**
+     * Generate LiveKit token for broadcaster
+     */
+    public function getLiveKitBroadcasterToken(Request $request, LiveStream $stream)
+    {
+        // Check authorization
+        if (!auth()->check()) {
+            return response()->json(['error' => 'Unauthorized'], 401);
+        }
+
+        if ($stream->broadcaster_id && $stream->broadcaster_id !== auth()->id()) {
+            return response()->json(['error' => 'Not authorized for this stream'], 403);
+        }
+
+        try {
+            $livekitService = app(\App\Services\LiveKitService::class);
+
+            $token = $livekitService->generateBroadcasterToken($stream, auth()->id());
+            $serverUrl = $livekitService->getServerUrl();
+            $roomName = $livekitService->getRoomName($stream);
+
+            return response()->json([
+                'success' => true,
+                'token' => $token,
+                'url' => $serverUrl,
+                'room' => $roomName
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Failed to generate broadcaster token', [
+                'stream_id' => $stream->id,
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to generate access token'
+            ], 500);
+        }
+    }
+
+    /**
+     * Generate LiveKit token for viewer
+     */
+    public function getLiveKitViewerToken(Request $request, LiveStream $stream)
+    {
+        // Viewers don't need to be authenticated (public streams)
+        // But we'll use their ID if they are logged in
+        $userId = auth()->check() ? auth()->id() : null;
+
+        try {
+            $livekitService = app(\App\Services\LiveKitService::class);
+
+            $token = $livekitService->generateViewerToken($stream, $userId);
+            $serverUrl = $livekitService->getServerUrl();
+            $roomName = $livekitService->getRoomName($stream);
+
+            return response()->json([
+                'success' => true,
+                'token' => $token,
+                'url' => $serverUrl,
+                'room' => $roomName
+            ]);
+
+        } catch (\Exception $e) {
+            Log::error('Failed to generate viewer token', [
+                'stream_id' => $stream->id,
+                'error' => $e->getMessage()
+            ]);
+
+            return response()->json([
+                'success' => false,
+                'error' => 'Failed to generate access token'
+            ], 500);
         }
     }
 }

@@ -36,12 +36,18 @@
                         <div id="no-camera"
                             class="absolute inset-0 flex flex-col items-center justify-center text-white">
                             <x-gmdi-videocam-off-r class="mb-4 h-24 w-24 opacity-50" />
-                            <p class="text-lg">No camera detected</p>
+                            <p class="text-lg mb-4">No camera detected</p>
+                            <button id="enable-camera-btn" class="btn btn-primary btn-lg">
+                                <x-gmdi-videocam-r class="h-6 w-6" />
+                                Enable Camera
+                            </button>
                         </div>
 
                         <!-- Mirror Camera Button (Overlay) -->
                         <div class="absolute bottom-4 right-4">
-                            <button id="mirror-camera" class="btn btn-sm btn-circle btn-ghost bg-black/50 text-white hover:bg-black/70" title="Mirror Camera">
+                            <button id="mirror-camera"
+                                class="btn btn-sm btn-circle btn-ghost bg-black/50 text-white hover:bg-black/70"
+                                title="Mirror Camera">
                                 <x-gmdi-flip-r class="h-5 w-5" />
                             </button>
                         </div>
@@ -67,27 +73,18 @@
                         </div>
                     </div>
 
-                    <!-- Quality Selector -->
-                    <div class="form-control mb-4">
-                        <label class="label">
-                            <span class="label-text font-semibold">Stream Quality</span>
-                        </label>
-                        <div class="flex gap-4">
-                            <label class="label cursor-pointer gap-2">
-                                <input type="radio" name="quality" value="360p" class="radio radio-primary" />
-                                <span class="label-text">360p</span>
-                            </label>
-                            <label class="label cursor-pointer gap-2">
-                                <input type="radio" name="quality" value="720p" class="radio radio-primary"
-                                    checked />
-                                <span class="label-text">720p</span>
-                            </label>
-                            <label class="label cursor-pointer gap-2">
-                                <input type="radio" name="quality" value="1080p" class="radio radio-primary" />
-                                <span class="label-text">1080p</span>
-                            </label>
-                        </div>
+
+                    <!-- Quality Info (Adaptive) -->
+                    <div class="alert alert-info mb-4">
+                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"
+                            class="stroke-current shrink-0 w-6 h-6">
+                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>
+                        </svg>
+                        <span><strong>Adaptive Quality:</strong> Video quality automatically adjusts based on network
+                            conditions (360p - 1080p)</span>
                     </div>
+
 
                     <!-- Start/Stop Button -->
                     <div class="flex gap-4">
@@ -214,6 +211,7 @@
             };
         </script>
         <script src="https://js.pusher.com/8.2.0/pusher.min.js"></script>
-        @vite(['resources/js/livecam/broadcaster-mse.js'])
+        {{-- LiveKit Broadcaster (SFU - ultra-low latency) --}}
+        @vite(['resources/js/livecam/broadcaster-livekit.js'])
     </x-slot:js>
 </x-layout.admin>

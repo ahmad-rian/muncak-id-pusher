@@ -21,6 +21,8 @@ Route::prefix('api/v1')->group(function () {
     Route::prefix('classifications')->group(function () {
         Route::post('stream/{streamId}/process', [TrailClassificationController::class, 'processFrame'])
             ->name('api.classifications.process');
+        Route::post('stream/{streamId}/classify', [TrailClassificationController::class, 'processFrame'])
+            ->name('api.classifications.classify'); // Alias for easier triggering
         Route::get('stream/{streamId}/latest', [TrailClassificationController::class, 'getLatest'])
             ->name('api.classifications.latest');
         Route::get('trail/{trailId}', [TrailClassificationController::class, 'getByTrail'])

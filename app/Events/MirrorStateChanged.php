@@ -49,6 +49,7 @@ class MirrorStateChanged implements ShouldBroadcastNow
     {
         return [
             'is_mirrored' => $this->isMirrored,
+            'stream_id' => $this->streamId
         ];
     }
 }

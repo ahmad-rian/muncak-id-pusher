@@ -7,8 +7,8 @@ export default defineConfig({
             input: [
                 'resources/css/app.css',
                 'resources/js/app.js',
-                'resources/js/livecam/broadcaster-mse.js',
-                'resources/js/livecam/viewer-mse.js',
+                'resources/js/livecam/broadcaster-livekit.js',
+                'resources/js/livecam/viewer-livekit.js',
                 'resources/js/livecam/trail-classifier.js'
             ],
             refresh: true,

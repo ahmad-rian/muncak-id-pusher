@@ -6,7 +6,7 @@
 
 const streamId = window.streamId;
 let refreshTimer = null;
-const REFRESH_INTERVAL = 30 * 1000; // Refresh setiap 30 detik untuk update UI
+const REFRESH_INTERVAL = 120 * 1000; // Refresh setiap 2 menit untuk update UI
 let classificationEnabled = false; // Disable auto-refresh by default
 
 console.log('🔬 Trail Classification Display initialized');

@@ -50,7 +50,8 @@ Route::prefix('artikel')->group(function () {
 // Public routes for viewing live streams
 Route::prefix('live-cam')->group(function () {
     Route::get('', [\App\Http\Controllers\LiveCamController::class, 'index'])->name('live-cam.index');
-    Route::get('{stream:slug}', [\App\Http\Controllers\LiveCamController::class, 'show'])->name('live-cam.show');
+
+    // SPECIFIC ROUTES FIRST (before wildcard!)
     Route::post('{stream:slug}/chat', [\App\Http\Controllers\LiveCamController::class, 'sendChat'])->name('live-cam.chat');
     Route::get('{stream:slug}/chat-history', [\App\Http\Controllers\LiveCamController::class, 'getChatHistory'])->name('live-cam.chat-history');
     Route::get('{stream:slug}/quality', [\App\Http\Controllers\LiveCamController::class, 'getQuality'])->name('live-cam.quality');
@@ -64,11 +65,21 @@ Route::prefix('live-cam')->group(function () {
     Route::get('{stream:slug}/chunk/{index}', [\App\Http\Controllers\LiveCamController::class, 'getChunk'])->name('live-cam.get-chunk');
     Route::get('{stream:slug}/status', [\App\Http\Controllers\LiveCamController::class, 'getStatus'])->name('live-cam.status');
 
+    // HLS Streaming routes (NEW - for basecamp livestreaming)
+    Route::get('{stream:slug}/playlist.m3u8', [\App\Http\Controllers\LiveCamController::class, 'getHLSPlaylist'])->name('live-cam.hls-playlist');
+    Route::get('{stream:slug}/{segmentName}', [\App\Http\Controllers\LiveCamController::class, 'getHLSSegment'])->name('live-cam.hls-segment');
+
     // Mirror state broadcast
     Route::post('{stream:slug}/mirror-state', [\App\Http\Controllers\LiveCamController::class, 'updateMirrorState'])->name('live-cam.mirror-state');
 
     // Thumbnail upload
     Route::post('{stream:slug}/thumbnail', [\App\Http\Controllers\LiveCamController::class, 'uploadThumbnail'])->name('live-cam.thumbnail');
+
+    // LiveKit token for viewer
+    Route::get('{stream:slug}/livekit/token', [\App\Http\Controllers\LiveCamController::class, 'getLiveKitViewerToken'])->name('live-cam.livekit-token');
+
+    // WILDCARD ROUTE LAST! (matches everything else)
+    Route::get('{stream:slug}', [\App\Http\Controllers\LiveCamController::class, 'show'])->name('live-cam.show');
 });
 
 Route::get('sitemap.xml', [IndexController::class, 'sitemap'])->name('sitemap');

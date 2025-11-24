@@ -84,20 +84,16 @@
                                     </div>
                                 </div>
 
-                                <!-- Quality Badge -->
+
+                                <!-- Adaptive Quality Badge -->
                                 <div class="absolute bottom-4 right-4">
-                                    <div class="dropdown dropdown-top dropdown-end">
-                                        <label tabindex="0"
-                                            class="badge badge-lg cursor-pointer bg-black/70 text-white border-0">
-                                            <span id="current-quality">{{ $stream->current_quality }}</span>
-                                            <x-gmdi-expand-more-r class="h-4 w-4 ml-1" />
-                                        </label>
-                                        <ul tabindex="0"
-                                            class="dropdown-content menu p-2 shadow bg-base-100 rounded-box w-32 mb-2">
-                                            <li><a onclick="changeQuality('360p')">360p</a></li>
-                                            <li><a onclick="changeQuality('720p')">720p</a></li>
-                                            <li><a onclick="changeQuality('1080p')">1080p</a></li>
-                                        </ul>
+                                    <div class="badge badge-lg bg-black/70 text-white border-0 gap-2">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none"
+                                            viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
+                                                d="M13 10V3L4 14h7v7l9-11h-7z" />
+                                        </svg>
+                                        <span>Auto Quality</span>
                                     </div>
                                 </div>
                             </div>
@@ -186,42 +182,60 @@
                         </div>
                     </div>
 
-                    <!-- Chat Card -->
-                    <div class="card bg-white shadow-xl flex-1 flex flex-col" style="min-height: 400px;">
-                        <!-- Chat Header -->
-                        <div class="card-body p-4 border-b border-base-300">
-                            <div class="flex items-center justify-between">
-                                <h3 class="font-bold text-base">Live Chat</h3>
-                                <div class="badge badge-sm gap-1">
-                                    <x-gmdi-people-r class="h-3 w-3" />
-                                    <span id="chat-viewer-count">{{ $stream->viewer_count }}</span>
+                    <!-- Modern Chat Card -->
+                    <div class="card bg-gradient-to-br from-base-100 to-base-200 shadow-2xl flex-1 flex flex-col overflow-hidden" style="min-height: 400px;">
+                        <!-- Chat Header with Gradient -->
+                        <div class="bg-gradient-to-r from-primary to-secondary p-4">
+                            <div class="flex items-center justify-between text-primary-content">
+                                <div class="flex items-center gap-2">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" />
+                                    </svg>
+                                    <h3 class="font-bold text-lg">Live Chat</h3>
+                                </div>
+                                <div class="badge badge-lg bg-white/20 border-0 gap-2">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" />
+                                    </svg>
+                                    <span id="chat-viewer-count" class="font-semibold">{{ $stream->viewer_count }}</span>
                                 </div>
                             </div>
                         </div>
 
-                        <!-- Messages Container -->
-                        <div id="chat-messages" class="flex-1 overflow-y-auto p-4 space-y-2">
-                            <div class="text-center text-sm text-base-content/50 mb-4">
-                                You joined as <strong>{{ $username }}</strong>
+                        <!-- Messages Container with Custom Scrollbar -->
+                        <div id="chat-messages" class="flex-1 overflow-y-auto p-4 space-y-3 bg-base-100" style="scrollbar-width: thin; scrollbar-color: rgba(0,0,0,0.2) transparent;">
+                            <div class="text-center py-8">
+                                <div class="inline-flex items-center gap-2 px-4 py-2 bg-base-200 rounded-full text-sm text-base-content/70">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                                    </svg>
+                                    <span>You joined as <strong class="text-primary">{{ $username }}</strong></span>
+                                </div>
                             </div>
                         </div>
 
-                        <!-- Chat Input -->
-                        <div class="p-4 border-t border-base-300">
-                            <div class="mb-2 text-xs text-base-content/70">
-                                Chatting as <strong>{{ $username }}</strong>
-                            </div>
-                            <form id="chat-form" class="flex gap-2">
-                                <input type="text" id="chat-input" placeholder="Send a message..."
-                                    class="input input-bordered flex-1 input-sm" maxlength="200" autocomplete="off" />
-                                <button type="submit" class="btn btn-primary btn-sm" id="send-button">
-                                    <x-gmdi-send-r class="h-4 w-4" />
-                                </button>
+                        <!-- Modern Chat Input -->
+                        <div class="p-4 bg-base-200 border-t border-base-300">
+                            <form id="chat-form" class="space-y-2">
+                                <div class="flex gap-2">
+                                    <div class="relative flex-1">
+                                        <input type="text" id="chat-input" placeholder="Type your message..." 
+                                            class="input input-bordered w-full pr-12 focus:outline-none focus:ring-2 focus:ring-primary" 
+                                            maxlength="200" autocomplete="off" />
+                                        <span id="char-counter" class="absolute right-3 top-1/2 -translate-y-1/2 text-xs text-base-content/40">0/200</span>
+                                    </div>
+                                    <button type="submit" class="btn btn-primary gap-2" id="send-button">
+                                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                            <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 19l9 2-9-18-9 18 9-2zm0 0v-8" />
+                                        </svg>
+                                        <span class="hidden sm:inline">Send</span>
+                                    </button>
+                                </div>
+                                <div class="flex items-center justify-between text-xs">
+                                    <span class="text-base-content/50">Chatting as <strong class="text-primary">{{ $username }}</strong></span>
+                                    <span id="throttle-message" class="text-error font-medium hidden"></span>
+                                </div>
                             </form>
-                            <div class="mt-1 flex justify-between text-xs text-base-content/50">
-                                <span id="char-counter">0/200</span>
-                                <span id="throttle-message" class="text-error hidden"></span>
-                            </div>
                         </div>
                     </div>
 
@@ -257,7 +271,7 @@
                 setTimeout(initPusher, 100);
             }
         }
-        
+
         // Start initialization
         if (document.readyState === 'loading') {
             document.addEventListener('DOMContentLoaded', initPusher);
@@ -266,7 +280,8 @@
         }
     </script>
 
-    @vite(['resources/js/livecam/viewer-mse.js', 'resources/js/livecam/trail-classifier.js'])
+    {{-- LiveKit Viewer (SFU - ultra-low latency) --}}
+    @vite(['resources/js/livecam/viewer-livekit.js', 'resources/js/livecam/trail-classifier.js'])
 </body>
 
 </html>

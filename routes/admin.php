@@ -160,11 +160,24 @@ Route::prefix('admin')->middleware(['auth', 'role:admin'])->group(function () {
         Route::get('{stream:slug}/chunk/{index}', [\App\Http\Controllers\LiveCamController::class, 'getChunk'])->name('admin.live-stream.get-chunk');
         Route::get('{stream:slug}/status', [\App\Http\Controllers\LiveCamController::class, 'getStatus'])->name('admin.live-stream.status');
 
-        // Mirror state broadcast
-        Route::post('{stream:slug}/mirror-state', [\App\Http\Controllers\LiveCamController::class, 'updateMirrorState'])->name('admin.live-stream.mirror-state');
+        // HLS Streaming routes (NEW - for basecamp livestreaming)
+        Route::post('{stream:slug}/upload-hls-chunk', [\App\Http\Controllers\LiveCamController::class, 'uploadHLSChunk'])->name('admin.live-stream.upload-hls-chunk');
+        Route::get('{stream:slug}/playlist.m3u8', [\App\Http\Controllers\LiveCamController::class, 'getHLSPlaylist'])->name('admin.live-stream.hls-playlist');
 
-        // Thumbnail upload
+        // Chat history for broadcaster (MUST be before wildcard segment route!)
+        Route::get('{stream:slug}/chat-history', [\App\Http\Controllers\LiveCamController::class, 'getChatHistory'])->name('admin.live-stream.chat-history');
+
+        // Mirror state broadcast (MUST be before wildcard!)
+        Route::post('{stream:slug}/mirror', [\App\Http\Controllers\LiveCamController::class, 'updateMirrorState'])->name('admin.live-stream.mirror');
+
+        // Thumbnail upload (MUST be before wildcard!)
         Route::post('{stream:slug}/thumbnail', [\App\Http\Controllers\LiveCamController::class, 'uploadThumbnail'])->name('admin.live-stream.thumbnail');
+
+        // LiveKit token for broadcaster (MUST be before wildcard!)
+        Route::get('{stream:slug}/livekit/token', [\App\Http\Controllers\LiveCamController::class, 'getLiveKitBroadcasterToken'])->name('admin.live-stream.livekit-token');
+
+        // HLS segment route (WILDCARD - must be last!)
+        Route::get('{stream:slug}/{segmentName}', [\App\Http\Controllers\LiveCamController::class, 'getHLSSegment'])->name('admin.live-stream.hls-segment');
     });
 
     /**
