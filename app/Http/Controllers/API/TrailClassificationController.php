@@ -134,7 +134,7 @@ class TrailClassificationController extends Controller
                 ]);
 
                 // Broadcast classification ready event to viewers
-                broadcast(new ClassificationReady($classification))->toOthers();
+                broadcast(new ClassificationReady($classification)); // Send to ALL viewers
 
                 return response()->json([
                     'success' => true,
