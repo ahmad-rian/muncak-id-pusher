@@ -207,6 +207,13 @@ if (stopBtn) {
 async function stopBroadcast() {
     console.log('🛑 Stopping broadcast...');
 
+    // Stop classification timer FIRST (before server stop)
+    if (window.classificationInterval) {
+        clearInterval(window.classificationInterval);
+        window.classificationInterval = null;
+        console.log('🛑 Classification stopped');
+    }
+
     // Unpublish tracks from LiveKit (but keep them running for preview)
     if (livekitRoom && livekitRoom.localParticipant) {
         try {
@@ -267,12 +274,7 @@ async function stopBroadcast() {
     }
     startTime = null;
 
-    // Stop classification timer
-    if (window.classificationInterval) {
-        clearInterval(window.classificationInterval);
-        window.classificationInterval = null;
-        console.log('🛑 Classification stopped');
-    }
+    // Classification timer already stopped above (before server stop)
 
     if (streamDuration) {
         streamDuration.textContent = '00:00:00';
