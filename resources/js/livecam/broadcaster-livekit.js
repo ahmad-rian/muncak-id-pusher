@@ -150,11 +150,15 @@ async function switchCamera() {
             const oldAudioTrack = localTracks.find(t => t.kind === 'audio');
 
             try {
-                // Unpublish old video track
-                const oldVideoPublication = Array.from(livekitRoom.localParticipant.videoTracks.values())[0];
-                if (oldVideoPublication && oldVideoPublication.track) {
-                    await livekitRoom.localParticipant.unpublishTrack(oldVideoPublication.track);
-                    console.log('✅ Old video track unpublished');
+                // Unpublish old video track using the MediaStreamTrack directly
+                if (oldVideoTrack) {
+                    try {
+                        await livekitRoom.localParticipant.unpublishTrack(oldVideoTrack);
+                        console.log('✅ Old video track unpublished');
+                    } catch (unpublishErr) {
+                        console.warn('⚠️ Failed to unpublish old track (might already be unpublished):', unpublishErr);
+                        // Continue anyway, this is not critical
+                    }
                 }
 
                 // Publish new video track
@@ -167,6 +171,7 @@ async function switchCamera() {
                 // Stop old video track AFTER publishing new one (to avoid black screen)
                 if (oldVideoTrack) {
                     oldVideoTrack.stop();
+                    console.log('✅ Old video track stopped');
                 }
 
                 // Keep using the same audio track (don't republish audio)
