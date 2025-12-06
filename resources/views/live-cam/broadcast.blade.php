@@ -55,7 +55,7 @@
                                 <div class="absolute bottom-4 right-4 flex gap-2">
                                     <button id="switch-camera"
                                         class="btn btn-sm btn-circle btn-ghost bg-black/50 text-white hover:bg-black/70"
-                                        title="Switch Camera">
+                                        title="Switch Camera Front/Back">
                                         <x-gmdi-cameraswitch-r class="h-5 w-5" />
                                     </button>
                                     <button id="mirror-camera"
@@ -240,7 +240,7 @@
         };
     </script>
 
-    @vite(['resources/js/livecam/broadcaster-hls.js'])
+    @vite(['resources/js/livecam/broadcaster-livekit.js'])
 </body>
 
 </html>

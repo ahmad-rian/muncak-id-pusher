@@ -85,13 +85,10 @@ async function getAvailableCameras() {
         availableCameras = devices.filter(device => device.kind === 'videoinput');
         console.log(`📹 Found ${availableCameras.length} cameras:`, availableCameras);
 
-        // Show/hide switch camera button based on available cameras
+        // Always show switch camera button (for mobile devices)
+        // Even if only 1 camera is detected, mobile devices can switch between front/back
         if (switchCameraBtn) {
-            if (availableCameras.length > 1) {
-                switchCameraBtn.classList.remove('hidden');
-            } else {
-                switchCameraBtn.classList.add('hidden');
-            }
+            switchCameraBtn.classList.remove('hidden');
         }
 
         return availableCameras;

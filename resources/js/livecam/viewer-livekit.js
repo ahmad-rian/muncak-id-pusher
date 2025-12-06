@@ -84,16 +84,21 @@ function updateVideoOrientation(orientation, width, height) {
     }
 }
 
+// Helper function to add chat message
+function addChatMessage(username, message) {
+    if (!chatMessages) return;
+
+    const messageDiv = document.createElement('div');
+    messageDiv.className = 'chat-message px-3 py-2 rounded-lg bg-base-200 hover:bg-base-300 transition-colors';
+    messageDiv.innerHTML = `<strong class="text-primary">${username}:</strong> <span class="text-base-content">${message}</span>`;
+    chatMessages.appendChild(messageDiv);
+    chatMessages.scrollTop = chatMessages.scrollHeight;
+}
+
 // Listen for chat messages (Pusher)
 channel.bind('App\\Events\\ChatMessageSent', (data) => {
     console.log('💬 Chat message:', data);
-    if (chatMessages) {
-        const messageDiv = document.createElement('div');
-        messageDiv.className = 'chat-message';
-        messageDiv.innerHTML = `<strong>${data.username}:</strong> ${data.message}`;
-        chatMessages.appendChild(messageDiv);
-        chatMessages.scrollTop = chatMessages.scrollHeight;
-    }
+    addChatMessage(data.username, data.message);
 });
 
 // Listen for viewer count updates (Pusher)
