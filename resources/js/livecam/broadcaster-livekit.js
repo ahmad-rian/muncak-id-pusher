@@ -24,6 +24,7 @@ let durationInterval = null;
 let currentFacingMode = 'user'; // 'user' for front camera, 'environment' for back camera
 let availableCameras = [];
 let videoOrientation = 'landscape'; // 'landscape' or 'portrait'
+let isSwitchingCamera = false; // Prevent multiple simultaneous switches
 
 console.log('🎥 LiveKit Broadcaster starting...');
 console.log('Stream ID:', streamId);
@@ -126,40 +127,64 @@ async function getCameraStream(facingMode = 'user') {
 
 // Switch camera between front and back
 async function switchCamera() {
+    // Prevent multiple simultaneous switches
+    if (isSwitchingCamera) {
+        console.warn('⚠️ Camera switch already in progress, please wait...');
+        return;
+    }
+
     try {
+        isSwitchingCamera = true;
         const newFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
         console.log(`🔄 Switching camera from ${currentFacingMode} to ${newFacingMode}`);
 
         // Get new stream
         const newStream = await getCameraStream(newFacingMode);
+        const newVideoTrack = newStream.getVideoTracks()[0];
+        const newAudioTrack = newStream.getAudioTracks()[0];
 
         // If broadcasting, replace the video track
         if (livekitRoom && livekitRoom.localParticipant) {
-            const newVideoTrack = newStream.getVideoTracks()[0];
-            const newAudioTrack = newStream.getAudioTracks()[0];
+            // Get old tracks before stopping them
+            const oldVideoTrack = localTracks.find(t => t.kind === 'video');
+            const oldAudioTrack = localTracks.find(t => t.kind === 'audio');
 
-            // Unpublish old video track
-            const oldVideoPublication = Array.from(livekitRoom.localParticipant.videoTracks.values())[0];
-            if (oldVideoPublication) {
-                await livekitRoom.localParticipant.unpublishTrack(oldVideoPublication.track);
+            try {
+                // Unpublish old video track
+                const oldVideoPublication = Array.from(livekitRoom.localParticipant.videoTracks.values())[0];
+                if (oldVideoPublication && oldVideoPublication.track) {
+                    await livekitRoom.localParticipant.unpublishTrack(oldVideoPublication.track);
+                    console.log('✅ Old video track unpublished');
+                }
+
+                // Publish new video track
+                await livekitRoom.localParticipant.publishTrack(newVideoTrack, {
+                    name: 'camera',
+                    simulcast: true,
+                });
+                console.log('✅ New video track published');
+
+                // Stop old video track AFTER publishing new one (to avoid black screen)
+                if (oldVideoTrack) {
+                    oldVideoTrack.stop();
+                }
+
+                // Keep using the same audio track (don't republish audio)
+                localTracks = [newVideoTrack, oldAudioTrack || newAudioTrack];
+
+            } catch (publishErr) {
+                console.error('❌ Failed to replace track during broadcast:', publishErr);
+                // If publish fails, stop the new track and keep the old one
+                newVideoTrack.stop();
+                if (newAudioTrack) newAudioTrack.stop();
+                throw publishErr;
             }
-
-            // Stop old tracks
-            localTracks.forEach(track => track.stop());
-
-            // Publish new video track
-            await livekitRoom.localParticipant.publishTrack(newVideoTrack, {
-                name: 'camera',
-                simulcast: true,
-            });
-
-            // Update local tracks
-            localTracks = [newVideoTrack, newAudioTrack];
         } else {
             // Not broadcasting, just stop old tracks
             if (video.srcObject) {
                 video.srcObject.getTracks().forEach(track => track.stop());
             }
+            localTracks = [newVideoTrack, newAudioTrack];
         }
 
         // Update preview
@@ -178,6 +203,9 @@ async function switchCamera() {
     } catch (err) {
         console.error('❌ Failed to switch camera:', err);
         alert('Failed to switch camera: ' + err.message);
+    } finally {
+        // Always reset the flag
+        isSwitchingCamera = false;
     }
 }
 
