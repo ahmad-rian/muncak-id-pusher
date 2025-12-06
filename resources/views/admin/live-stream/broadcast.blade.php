@@ -43,8 +43,13 @@
                             </button>
                         </div>
 
-                        <!-- Mirror Camera Button (Overlay) -->
-                        <div class="absolute bottom-4 right-4">
+                        <!-- Camera Controls (Overlay) -->
+                        <div class="absolute bottom-4 right-4 flex gap-2">
+                            <button id="switch-camera"
+                                class="btn btn-sm btn-circle btn-ghost bg-black/50 text-white hover:bg-black/70"
+                                title="Switch Camera">
+                                <x-gmdi-cameraswitch-r class="h-5 w-5" />
+                            </button>
                             <button id="mirror-camera"
                                 class="btn btn-sm btn-circle btn-ghost bg-black/50 text-white hover:bg-black/70"
                                 title="Mirror Camera">
@@ -175,7 +180,7 @@
                             <div>
                                 <span class="font-semibold">Jalur Pendakian:</span>
                                 <span class="ml-2">{{ $stream->hikingTrail->nama }}</span>
-                                @if($stream->hikingTrail->gunung)
+                                @if ($stream->hikingTrail->gunung)
                                     <span class="text-base-content/70">({{ $stream->hikingTrail->gunung->nama }})</span>
                                 @endif
                             </div>

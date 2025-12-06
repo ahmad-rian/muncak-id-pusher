@@ -51,8 +51,13 @@
                                     <p class="text-lg">No camera detected</p>
                                 </div>
 
-                                <!-- Mirror Camera Button (Overlay) -->
-                                <div class="absolute bottom-4 right-4">
+                                <!-- Camera Controls (Overlay) -->
+                                <div class="absolute bottom-4 right-4 flex gap-2">
+                                    <button id="switch-camera"
+                                        class="btn btn-sm btn-circle btn-ghost bg-black/50 text-white hover:bg-black/70"
+                                        title="Switch Camera">
+                                        <x-gmdi-cameraswitch-r class="h-5 w-5" />
+                                    </button>
                                     <button id="mirror-camera"
                                         class="btn btn-sm btn-circle btn-ghost bg-black/50 text-white hover:bg-black/70"
                                         title="Mirror Camera">
@@ -88,7 +93,8 @@
                                 </label>
                                 <div class="flex gap-4">
                                     <label class="label cursor-pointer gap-2">
-                                        <input type="radio" name="quality" value="360p" class="radio radio-primary" />
+                                        <input type="radio" name="quality" value="360p"
+                                            class="radio radio-primary" />
                                         <span class="label-text">360p</span>
                                     </label>
                                     <label class="label cursor-pointer gap-2">
@@ -97,7 +103,8 @@
                                         <span class="label-text">720p</span>
                                     </label>
                                     <label class="label cursor-pointer gap-2">
-                                        <input type="radio" name="quality" value="1080p" class="radio radio-primary" />
+                                        <input type="radio" name="quality" value="1080p"
+                                            class="radio radio-primary" />
                                         <span class="label-text">1080p</span>
                                     </label>
                                 </div>
@@ -201,8 +208,9 @@
                             <div>
                                 <p class="font-semibold">Jalur Pendakian:</p>
                                 <p>{{ $stream->hikingTrail->nama }}</p>
-                                @if($stream->hikingTrail->gunung)
-                                    <p class="text-sm text-base-content/70">Gunung: {{ $stream->hikingTrail->gunung->nama }}</p>
+                                @if ($stream->hikingTrail->gunung)
+                                    <p class="text-sm text-base-content/70">Gunung:
+                                        {{ $stream->hikingTrail->gunung->nama }}</p>
                                 @endif
                             </div>
                         @endif

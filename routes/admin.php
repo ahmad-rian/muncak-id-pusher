@@ -170,6 +170,9 @@ Route::prefix('admin')->middleware(['auth', 'role:admin'])->group(function () {
         // Mirror state broadcast (MUST be before wildcard!)
         Route::post('{stream:slug}/mirror', [\App\Http\Controllers\LiveCamController::class, 'updateMirrorState'])->name('admin.live-stream.mirror');
 
+        // Video orientation broadcast (MUST be before wildcard!)
+        Route::post('{stream:slug}/orientation', [\App\Http\Controllers\LiveCamController::class, 'updateOrientation'])->name('admin.live-stream.orientation');
+
         // Thumbnail upload (MUST be before wildcard!)
         Route::post('{stream:slug}/thumbnail', [\App\Http\Controllers\LiveCamController::class, 'uploadThumbnail'])->name('admin.live-stream.thumbnail');
 

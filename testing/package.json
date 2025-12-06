@@ -1,0 +1,27 @@
+{
+    "name": "muncak-performance-testing",
+    "version": "1.0.0",
+    "description": "Performance testing suite for live streaming platform - Research metrics collection",
+    "main": "test-processor.cjs",
+    "scripts": {
+        "test": "./run-performance-test.sh",
+        "test:quick": "artillery quick --count 10 --num 50 https://pusher.muncak.id",
+        "install-artillery": "npm install -g artillery"
+    },
+    "keywords": [
+        "performance",
+        "testing",
+        "artillery",
+        "load-test",
+        "research"
+    ],
+    "author": "Research Team",
+    "license": "MIT",
+    "dependencies": {
+        "puppeteer": "^21.11.0",
+        "pusher-js": "^8.4.0-rc2"
+    },
+    "engines": {
+        "node": ">=14.0.0"
+    }
+}

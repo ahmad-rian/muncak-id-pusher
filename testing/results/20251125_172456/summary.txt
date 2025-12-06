@@ -1,0 +1,44 @@
+═══════════════════════════════════════════════════════════════
+    PERFORMANCE TEST REPORT - LIVE STREAMING PLATFORM
+═══════════════════════════════════════════════════════════════
+
+Test Date: Wed Dec  3 19:21:21 WIB 2025
+Target: https://pusher.muncak.id
+Stream: quam-modi-dolor-exercitation-voluptates-quasi-culpa-ut-fugiat-aP8DAM
+Duration: ~6.5 minutes
+
+═══════════════════════════════════════════════════════════════
+RESEARCH PARAMETERS MEASURED
+═══════════════════════════════════════════════════════════════
+
+✓ 1. Latency (HTTP & WebSocket)
+✓ 2. Throughput (RPS)
+✓ 3. CPU Usage
+✓ 4. Memory Usage
+✓ 5. Concurrent Connections
+✓ 6. Connection Establishment Time
+✓ 7. Error Rate
+✓ 8. Video Quality Stability (720p & 1080p)
+
+═══════════════════════════════════════════════════════════════
+SYSTEM RESOURCE USAGE
+═══════════════════════════════════════════════════════════════
+
+CPU Usage:
+  Average: 314.92%
+  Peak: 662.50%
+
+Memory Usage:
+  Average: 11244.53 MB
+  Peak: 11657.00 MB
+
+═══════════════════════════════════════════════════════════════
+AVAILABLE REPORTS
+═══════════════════════════════════════════════════════════════
+
+  /Users/mac/Herd/muncak-id-pusher/testing/results/20251125_172456/performance-report.html (13K)
+  /Users/mac/Herd/muncak-id-pusher/testing/results/20251125_172456/performance-report.pdf (761K)
+  /Users/mac/Herd/muncak-id-pusher/testing/results/20251125_172456/report.json (366K)
+  /Users/mac/Herd/muncak-id-pusher/testing/results/20251125_172456/server_metrics.csv (675B)
+  /Users/mac/Herd/muncak-id-pusher/testing/results/20251125_172456/summary.txt (2.1K)
+  /Users/mac/Herd/muncak-id-pusher/testing/results/20251125_172456/system_metrics.csv (3.4K)

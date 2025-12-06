@@ -21,6 +21,9 @@ let localTracks = [];
 let isMirrored = false;
 let startTime = null;
 let durationInterval = null;
+let currentFacingMode = 'user'; // 'user' for front camera, 'environment' for back camera
+let availableCameras = [];
+let videoOrientation = 'landscape'; // 'landscape' or 'portrait'
 
 console.log('🎥 LiveKit Broadcaster starting...');
 console.log('Stream ID:', streamId);
@@ -44,6 +47,7 @@ const video = document.getElementById('camera-preview');
 const startBtn = document.getElementById('start-button');
 const stopBtn = document.getElementById('stop-button');
 const mirrorBtn = document.getElementById('mirror-camera');
+const switchCameraBtn = document.getElementById('switch-camera');
 const statusBadge = document.getElementById('stream-status');
 const streamDuration = document.getElementById('stream-duration');
 const chatMessages = document.getElementById('chat-monitor');
@@ -73,6 +77,159 @@ channel.bind('App\\Events\\ChatMessageSent', (data) => {
         chatMessages.scrollTop = chatMessages.scrollHeight;
     }
 });
+
+// Get available cameras
+async function getAvailableCameras() {
+    try {
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        availableCameras = devices.filter(device => device.kind === 'videoinput');
+        console.log(`📹 Found ${availableCameras.length} cameras:`, availableCameras);
+
+        // Show/hide switch camera button based on available cameras
+        if (switchCameraBtn) {
+            if (availableCameras.length > 1) {
+                switchCameraBtn.classList.remove('hidden');
+            } else {
+                switchCameraBtn.classList.add('hidden');
+            }
+        }
+
+        return availableCameras;
+    } catch (err) {
+        console.error('Failed to enumerate devices:', err);
+        return [];
+    }
+}
+
+// Get camera stream with facing mode
+async function getCameraStream(facingMode = 'user') {
+    try {
+        const constraints = {
+            video: {
+                facingMode: facingMode,
+                width: { ideal: 1280 },
+                height: { ideal: 720 },
+                frameRate: { ideal: 30 }
+            },
+            audio: true
+        };
+
+        console.log(`📹 Requesting camera with facingMode: ${facingMode}`);
+        const stream = await navigator.mediaDevices.getUserMedia(constraints);
+
+        // Update current facing mode
+        currentFacingMode = facingMode;
+
+        return stream;
+    } catch (err) {
+        console.error('Failed to get camera stream:', err);
+        throw err;
+    }
+}
+
+// Switch camera between front and back
+async function switchCamera() {
+    try {
+        const newFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
+        console.log(`🔄 Switching camera from ${currentFacingMode} to ${newFacingMode}`);
+
+        // Get new stream
+        const newStream = await getCameraStream(newFacingMode);
+
+        // If broadcasting, replace the video track
+        if (livekitRoom && livekitRoom.localParticipant) {
+            const newVideoTrack = newStream.getVideoTracks()[0];
+            const newAudioTrack = newStream.getAudioTracks()[0];
+
+            // Unpublish old video track
+            const oldVideoPublication = Array.from(livekitRoom.localParticipant.videoTracks.values())[0];
+            if (oldVideoPublication) {
+                await livekitRoom.localParticipant.unpublishTrack(oldVideoPublication.track);
+            }
+
+            // Stop old tracks
+            localTracks.forEach(track => track.stop());
+
+            // Publish new video track
+            await livekitRoom.localParticipant.publishTrack(newVideoTrack, {
+                name: 'camera',
+                simulcast: true,
+            });
+
+            // Update local tracks
+            localTracks = [newVideoTrack, newAudioTrack];
+        } else {
+            // Not broadcasting, just stop old tracks
+            if (video.srcObject) {
+                video.srcObject.getTracks().forEach(track => track.stop());
+            }
+        }
+
+        // Update preview
+        if (video) {
+            video.srcObject = newStream;
+            video.muted = true;
+            await video.play();
+
+            // Detect and broadcast orientation after camera switch
+            video.addEventListener('loadedmetadata', () => {
+                detectAndBroadcastOrientation();
+            }, { once: true });
+        }
+
+        console.log(`✅ Camera switched to ${newFacingMode}`);
+    } catch (err) {
+        console.error('❌ Failed to switch camera:', err);
+        alert('Failed to switch camera: ' + err.message);
+    }
+}
+
+// Switch camera button handler
+if (switchCameraBtn) {
+    switchCameraBtn.addEventListener('click', () => {
+        switchCamera();
+    });
+}
+
+// Detect and broadcast video orientation
+async function detectAndBroadcastOrientation() {
+    if (!video || !video.videoWidth || !video.videoHeight) {
+        return;
+    }
+
+    const width = video.videoWidth;
+    const height = video.videoHeight;
+    const newOrientation = width > height ? 'landscape' : 'portrait';
+
+    // Only broadcast if orientation changed
+    if (newOrientation !== videoOrientation) {
+        videoOrientation = newOrientation;
+        console.log(`📐 Video orientation: ${videoOrientation} (${width}x${height})`);
+
+        const basePath = window.location.pathname.includes('/admin/live-stream')
+            ? `/admin/live-stream/${streamSlug}`
+            : `/live-cam/${streamSlug}`;
+
+        try {
+            await fetch(`${basePath}/orientation`, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
+                },
+                body: JSON.stringify({
+                    orientation: videoOrientation,
+                    width: width,
+                    height: height
+                })
+            });
+
+            console.log('📐 Orientation broadcasted:', videoOrientation);
+        } catch (err) {
+            console.error('Failed to broadcast orientation:', err);
+        }
+    }
+}
 
 // Start broadcast
 if (startBtn) {
@@ -118,15 +275,8 @@ if (startBtn) {
             // Connect to room
             await livekitRoom.connect(tokenData.url, tokenData.token);
 
-            // Get camera and microphone
-            const stream = await navigator.mediaDevices.getUserMedia({
-                video: {
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 },
-                    frameRate: { ideal: 30 }
-                },
-                audio: true
-            });
+            // Get camera and microphone with current facing mode
+            const stream = await getCameraStream(currentFacingMode);
 
             console.log('✅ Camera access granted');
 
@@ -135,6 +285,11 @@ if (startBtn) {
                 video.srcObject = stream;
                 video.muted = true;
                 await video.play();
+
+                // Detect and broadcast orientation after video is loaded
+                video.addEventListener('loadedmetadata', () => {
+                    detectAndBroadcastOrientation();
+                }, { once: true });
             }
 
             // Publish tracks to LiveKit
@@ -526,8 +681,13 @@ async function initializeCamera() {
             noCameraDiv.classList.add('hidden');
         }
 
+        // Get available cameras first
+        await getAvailableCameras();
+
+        // Get camera stream with current facing mode (no audio for preview)
         const stream = await navigator.mediaDevices.getUserMedia({
             video: {
+                facingMode: currentFacingMode,
                 width: { ideal: 1280 },
                 height: { ideal: 720 },
                 frameRate: { ideal: 30 }

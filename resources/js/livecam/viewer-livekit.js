@@ -49,6 +49,41 @@ channel.bind('App\\Events\\MirrorStateChanged', (data) => {
     }
 });
 
+// Listen for orientation changes (Pusher)
+channel.bind('App\\Events\\OrientationChanged', (data) => {
+    console.log('📐 Orientation changed:', data);
+    updateVideoOrientation(data.orientation, data.width, data.height);
+});
+
+// Update video container orientation
+function updateVideoOrientation(orientation, width, height) {
+    const videoContainer = video?.parentElement;
+    if (!videoContainer) {
+        console.warn('Video container not found');
+        return;
+    }
+
+    // Remove existing aspect ratio classes
+    videoContainer.classList.remove('aspect-video', 'aspect-[9/16]');
+
+    if (orientation === 'portrait') {
+        // Portrait mode - 9:16 aspect ratio
+        videoContainer.classList.add('aspect-[9/16]');
+        // On large screens, limit the width to prevent it from being too wide
+        videoContainer.style.maxWidth = '600px';
+        videoContainer.style.marginLeft = 'auto';
+        videoContainer.style.marginRight = 'auto';
+        console.log('📱 Switched to portrait mode (9:16)');
+    } else {
+        // Landscape mode - 16:9 aspect ratio (default)
+        videoContainer.classList.add('aspect-video');
+        videoContainer.style.maxWidth = '';
+        videoContainer.style.marginLeft = '';
+        videoContainer.style.marginRight = '';
+        console.log('🖥️ Switched to landscape mode (16:9)');
+    }
+}
+
 // Listen for chat messages (Pusher)
 channel.bind('App\\Events\\ChatMessageSent', (data) => {
     console.log('💬 Chat message:', data);

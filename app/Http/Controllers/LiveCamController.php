@@ -560,6 +560,37 @@ class LiveCamController extends Controller
     }
 
     /**
+     * Update video orientation and broadcast to viewers
+     */
+    public function updateOrientation(Request $request, LiveStream $stream)
+    {
+        $validator = Validator::make($request->all(), [
+            'orientation' => 'required|in:landscape,portrait',
+            'width' => 'required|integer|min:1',
+            'height' => 'required|integer|min:1',
+        ]);
+
+        if ($validator->fails()) {
+            return response()->json(['errors' => $validator->errors()], 422);
+        }
+
+        // Broadcast orientation to viewers
+        broadcast(new \App\Events\OrientationChanged(
+            $stream->id,
+            $request->input('orientation'),
+            $request->input('width'),
+            $request->input('height')
+        ));
+
+        return response()->json([
+            'success' => true,
+            'orientation' => $request->input('orientation'),
+            'width' => $request->input('width'),
+            'height' => $request->input('height')
+        ]);
+    }
+
+    /**
      * Upload thumbnail for stream (captured once at start)
      */
     public function uploadThumbnail(Request $request, LiveStream $stream)

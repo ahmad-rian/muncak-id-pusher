@@ -72,6 +72,9 @@ Route::prefix('live-cam')->group(function () {
     // Mirror state broadcast
     Route::post('{stream:slug}/mirror-state', [\App\Http\Controllers\LiveCamController::class, 'updateMirrorState'])->name('live-cam.mirror-state');
 
+    // Video orientation broadcast
+    Route::post('{stream:slug}/orientation', [\App\Http\Controllers\LiveCamController::class, 'updateOrientation'])->name('live-cam.orientation');
+
     // Thumbnail upload
     Route::post('{stream:slug}/thumbnail', [\App\Http\Controllers\LiveCamController::class, 'uploadThumbnail'])->name('live-cam.thumbnail');
 

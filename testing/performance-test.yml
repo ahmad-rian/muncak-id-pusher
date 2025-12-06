@@ -1,0 +1,291 @@
+config:
+  target: "https://pusher.muncak.id"
+  
+  # Test phases - Progressive load testing
+  phases:
+    # Phase 1: Warm-up (Baseline)
+    - duration: 30
+      arrivalRate: 2
+      name: "Phase 1: Warm-up"
+    
+    # Phase 2: Light Load (Normal viewing)
+    - duration: 60
+      arrivalRate: 5
+      rampTo: 10
+      name: "Phase 2: Light Load (5-10 users/sec)"
+    
+    # Phase 3: Medium Load (Peak hours)
+    - duration: 90
+      arrivalRate: 10
+      rampTo: 25
+      name: "Phase 3: Medium Load (10-25 users/sec)"
+    
+    # Phase 4: Heavy Load (Stress test)
+    - duration: 120
+      arrivalRate: 25
+      rampTo: 50
+      name: "Phase 4: Heavy Load (25-50 users/sec)"
+    
+    # Phase 5: Spike Test (Sudden traffic)
+    - duration: 60
+      arrivalRate: 75
+      name: "Phase 5: Spike Test (75 users/sec)"
+    
+    # Phase 6: Cool-down (Recovery)
+    - duration: 30
+      arrivalRate: 5
+      name: "Phase 6: Cool-down"
+
+  processor: "./test-processor.cjs"
+  
+  # HTTP configuration
+  http:
+    timeout: 45  # 45 second timeout for slow responses
+    maxSockets: 100  # Max concurrent connections per host
+  
+  # Environment variables
+  variables:
+    pusher_key: "{{ $processEnvironment.PUSHER_APP_KEY }}"
+    pusher_cluster: "{{ $processEnvironment.PUSHER_APP_CLUSTER }}"
+    streamSlug: "quam-modi-dolor-exercitation-voluptates-quasi-culpa-ut-fugiat-aP8DAM"
+    streamId: "8"
+  
+  # Plugins for enhanced metrics
+  plugins:
+    expect: {}
+    metrics-by-endpoint: {}
+  
+  # Ensure test completes even with errors
+  ensure:
+    maxErrorRate: 5  # Allow up to 5% error rate
+
+scenarios:
+  # Scenario 1: Viewer watching stream (70% of traffic)
+  - name: "Viewer Watching Stream"
+    weight: 70
+    flow:
+      # 1. Load stream page
+      - get:
+          url: "/live-cam/{{ streamSlug }}"
+          capture:
+            - json: "$.stream_id"
+              as: "streamId"
+          expect:
+            - statusCode: 200
+          beforeRequest: "recordRequestStart"
+          afterResponse: "recordResponseMetrics"
+      
+      # 2. Get LiveKit token
+      - get:
+          url: "/live-cam/{{ streamSlug }}/livekit/token"
+          expect:
+            - statusCode: 200
+          beforeRequest: "recordRequestStart"
+          afterResponse: "recordResponseMetrics"
+      
+      # 3. Subscribe to Pusher channel (WebSocket connection)
+      - function: "subscribeToPusherChannel"
+      
+      # 4. Join viewer count
+      - post:
+          url: "/live-cam/{{ streamSlug }}/viewer-count"
+          json:
+            action: "join"
+          expect:
+            - statusCode: 200
+          beforeRequest: "recordRequestStart"
+          afterResponse: "recordResponseMetrics"
+      
+      # 5. Simulate video quality check (720p)
+      - function: "simulateVideoQuality720p"
+      
+      # 6. Watch stream for random duration
+      - think: "{{ $randomNumber(10, 30) }}"
+      
+      # 7. Send chat message
+      - post:
+          url: "/live-cam/{{ streamSlug }}/chat"
+          json:
+            username: "Viewer-{{ $randomNumber(1000, 9999) }}"
+            message: "Test message {{ $randomString() }}"
+          expect:
+            - statusCode: 200
+          beforeRequest: "recordRequestStart"
+          afterResponse: "recordResponseMetrics"
+      
+      # 8. Continue watching
+      - think: "{{ $randomNumber(15, 45) }}"
+      
+      # 9. Simulate quality change to 1080p
+      - function: "simulateVideoQuality1080p"
+      
+      # 10. Send another chat message
+      - post:
+          url: "/live-cam/{{ streamSlug }}/chat"
+          json:
+            username: "Viewer-{{ $randomNumber(1000, 9999) }}"
+            message: "Another message {{ $randomString() }}"
+          expect:
+            - statusCode: 200
+          beforeRequest: "recordRequestStart"
+          afterResponse: "recordResponseMetrics"
+      
+      # 11. Leave stream
+      - post:
+          url: "/live-cam/{{ streamSlug }}/viewer-count"
+          json:
+            action: "leave"
+          expect:
+            - statusCode: 200
+          beforeRequest: "recordRequestStart"
+          afterResponse: "recordResponseMetrics"
+      
+      # 12. Disconnect from Pusher
+      - function: "disconnectPusher"
+
+  # Scenario 2: Heavy Chat Activity (20% of traffic)
+  - name: "Heavy Chat Activity"
+    weight: 20
+    flow:
+      # 1. Load stream page
+      - get:
+          url: "/live-cam/{{ streamSlug }}"
+          expect:
+            - statusCode: 200
+          beforeRequest: "recordRequestStart"
+          afterResponse: "recordResponseMetrics"
+      
+      # 2. Subscribe to Pusher
+      - function: "subscribeToPusherChannel"
+      
+      # 3. Join viewer count
+      - post:
+          url: "/live-cam/{{ streamSlug }}/viewer-count"
+          json:
+            action: "join"
+          expect:
+            - statusCode: 200
+      
+      # 4. Send multiple chat messages rapidly
+      - loop:
+          - post:
+              url: "/live-cam/{{ streamSlug }}/chat"
+              json:
+                username: "ChatUser-{{ $randomNumber(1000, 9999) }}"
+                message: "Rapid chat {{ $randomString() }}"
+              expect:
+                - statusCode: 200
+              beforeRequest: "recordRequestStart"
+              afterResponse: "recordResponseMetrics"
+          - think: "{{ $randomNumber(1, 3) }}"
+        count: 15
+      
+      # 5. Leave
+      - post:
+          url: "/live-cam/{{ streamSlug }}/viewer-count"
+          json:
+            action: "leave"
+          expect:
+            - statusCode: 200
+      
+      # 6. Disconnect
+      - function: "disconnectPusher"
+
+  # Scenario 3: Quick Viewer (Join and Leave - 10% of traffic)
+  - name: "Quick Viewer (Bounce)"
+    weight: 10
+    flow:
+      # 1. Load stream page
+      - get:
+          url: "/live-cam/{{ streamSlug }}"
+          expect:
+            - statusCode: 200
+          beforeRequest: "recordRequestStart"
+          afterResponse: "recordResponseMetrics"
+      
+      # 2. Subscribe to Pusher
+      - function: "subscribeToPusherChannel"
+      
+      # 3. Join viewer count
+      - post:
+          url: "/live-cam/{{ streamSlug }}/viewer-count"
+          json:
+            action: "join"
+          expect:
+            - statusCode: 200
+      
+      # 4. Quick look (2-5 seconds)
+      - think: "{{ $randomNumber(2, 5) }}"
+      
+      # 5. Leave immediately
+      - post:
+          url: "/live-cam/{{ streamSlug }}/viewer-count"
+          json:
+            action: "leave"
+          expect:
+            - statusCode: 200
+      
+      # 6. Disconnect
+      - function: "disconnectPusher"
+
+# Custom metrics for research parameters
+metrics:
+  # Latency metrics
+  - name: "http_request_latency"
+    type: "histogram"
+  - name: "websocket_connection_latency"
+    type: "histogram"
+  - name: "chat_message_latency"
+    type: "histogram"
+  
+  # Connection metrics
+  - name: "connection_establishment_time"
+    type: "histogram"
+  - name: "concurrent_connections"
+    type: "gauge"
+  - name: "active_websocket_connections"
+    type: "gauge"
+  
+  # Throughput metrics
+  - name: "requests_per_second"
+    type: "rate"
+  - name: "messages_per_second"
+    type: "rate"
+  
+  # Error metrics
+  - name: "http_errors"
+    type: "counter"
+  - name: "websocket_errors"
+    type: "counter"
+  - name: "total_errors"
+    type: "counter"
+  
+  # Video quality metrics
+  - name: "video_quality_720p_stable"
+    type: "counter"
+  - name: "video_quality_1080p_stable"
+    type: "counter"
+  - name: "video_quality_changes"
+    type: "counter"
+  - name: "current_video_quality"
+    type: "gauge"
+  
+  # Viewer metrics
+  - name: "viewer_count_updates"
+    type: "counter"
+  - name: "current_viewer_count"
+    type: "gauge"
+  
+  # Chat metrics
+  - name: "chat_messages_sent"
+    type: "counter"
+  - name: "chat_messages_received"
+    type: "counter"
+  
+  # Pusher metrics
+  - name: "pusher_connections_success"
+    type: "counter"
+  - name: "pusher_connections_failed"
+    type: "counter"
+  - name: "pusher_disconnections"
+    type: "counter"
