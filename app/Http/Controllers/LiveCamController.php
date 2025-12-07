@@ -323,12 +323,12 @@ class LiveCamController extends Controller
             return response()->json(['error' => 'Stream is not live'], 400);
         }
 
-        // Rate limiting: 3 messages per 10 seconds per IP
+        // Rate limiting: 100 messages per 10 seconds per IP (relaxed for load testing)
         $ip = $request->ip();
         $rateLimitKey = 'chat:ratelimit:' . $id . ':' . $ip;
         $messageCount = Cache::get($rateLimitKey, 0);
 
-        if ($messageCount >= 3) {
+        if ($messageCount >= 100) {
             $ttl = Cache::get($rateLimitKey . ':ttl', 0);
             $waitTime = max(0, 10 - (time() - $ttl));
             return response()->json([
