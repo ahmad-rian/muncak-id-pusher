@@ -1,6 +1,7 @@
 <?php
 
 use Illuminate\Support\Facades\Broadcast;
+use Illuminate\Support\Facades\Cache;
 
 /*
 |--------------------------------------------------------------------------
@@ -27,32 +28,20 @@ Broadcast::channel('stream.{streamId}', function () {
 
 // Private broadcaster channel (auth required)
 Broadcast::channel('private-broadcast.{streamId}', function ($user, $streamId) {
-    // Debug logging
-    \Log::info('Broadcast auth attempt', [
-        'user_id' => $user ? $user->id : null,
-        'stream_id' => $streamId
-    ]);
-
     if (!$user) {
-        \Log::warning('No user authenticated for broadcast channel');
         return false;
     }
 
-    $stream = \App\Models\LiveStream::find($streamId);
+    // Cache stream lookup for 5 minutes to reduce DB queries
+    $stream = Cache::remember("stream_auth_{$streamId}", 300, function() use ($streamId) {
+        return \App\Models\LiveStream::find($streamId);
+    });
 
     if (!$stream) {
-        \Log::warning('Stream not found', ['stream_id' => $streamId]);
         return false;
     }
 
-    $authorized = $stream->broadcaster_id === $user->id;
-    \Log::info('Broadcast authorization result', [
-        'authorized' => $authorized,
-        'broadcaster_id' => $stream->broadcaster_id,
-        'user_id' => $user->id
-    ]);
-
-    return $authorized;
+    return $stream->broadcaster_id === $user->id;
 });
 
 // Private signaling channels for WebRTC
