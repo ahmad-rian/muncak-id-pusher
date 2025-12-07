@@ -47,8 +47,8 @@ config:
   variables:
     pusher_key: "{{ $processEnvironment.PUSHER_APP_KEY }}"
     pusher_cluster: "{{ $processEnvironment.PUSHER_APP_CLUSTER }}"
-    streamSlug: "quam-modi-dolor-exercitation-voluptates-quasi-culpa-ut-fugiat-aP8DAM"
-    streamId: "8"
+    streamSlug: "lawu-FyCBuy"
+    streamId: "1"
   
   # Plugins for enhanced metrics
   plugins:
