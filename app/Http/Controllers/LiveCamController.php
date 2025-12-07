@@ -43,25 +43,33 @@ class LiveCamController extends Controller
 
         $totalLive = $liveStreams->count();
 
-        // Get latest classification per trail (one per trail, not multiple)
-        $recentClassifications = TrailClassification::with(['liveStream.hikingTrail.gunung', 'hikingTrail'])
-            ->where('status', 'completed')
-            ->whereNotNull('hiking_trail_id')
-            ->orderBy('classified_at', 'desc')
-            ->get()
-            ->unique('hiking_trail_id') // Only one classification per trail
-            ->take(12);
+        // Get latest classification per trail (cached for 5 minutes)
+        $recentClassifications = Cache::remember('recent_trail_classifications', 300, function() {
+            $classifications = TrailClassification::with(['liveStream.hikingTrail.gunung', 'hikingTrail'])
+                ->where('status', 'completed')
+                ->whereNotNull('hiking_trail_id')
+                ->orderBy('classified_at', 'desc')
+                ->limit(50) // Get more than needed
+                ->get()
+                ->unique('hiking_trail_id') // Only one per trail
+                ->take(12);
 
-        // Get all trails that have classifications for filter
-        $availableTrails = TrailClassification::with('hikingTrail.gunung')
-            ->where('status', 'completed')
-            ->whereNotNull('hiking_trail_id')
-            ->get()
-            ->pluck('hikingTrail')
-            ->unique('id')
-            ->filter()
-            ->sortBy('nama')
-            ->values();
+            return $classifications;
+        });
+
+        // Get all trails that have classifications for filter (cached and optimized)
+        $availableTrails = Cache::remember('available_trails_with_classifications', 300, function() {
+            return TrailClassification::with('hikingTrail.gunung')
+                ->where('status', 'completed')
+                ->whereNotNull('hiking_trail_id')
+                ->select('hiking_trail_id')
+                ->distinct()
+                ->get()
+                ->pluck('hikingTrail')
+                ->filter()
+                ->sortBy('nama')
+                ->values();
+        });
 
         return view('live-cam.index', compact('liveStreams', 'totalLive', 'recentClassifications', 'availableTrails'));
     }
@@ -346,13 +354,7 @@ class LiveCamController extends Controller
         }
         Cache::put($rateLimitKey, $messageCount + 1, 10);
 
-        // Broadcast chat message
-        \Log::info('Broadcasting chat message', [
-            'stream_id' => $id,
-            'username' => $username,
-            'message' => $message
-        ]);
-
+        // Broadcast chat message (now queued via Redis)
         event(new ChatMessageSent($id, $username, $message));
 
         return response()->json([
@@ -368,16 +370,20 @@ class LiveCamController extends Controller
      */
     public function getChatHistory(LiveStream $stream)
     {
+        // Add pagination and limit - only get last 100 messages
         $messages = ChatMessage::where('live_stream_id', $stream->id)
-            ->orderBy('created_at', 'asc')
+            ->orderBy('created_at', 'desc')
+            ->limit(100)
             ->get()
+            ->reverse()
             ->map(function ($msg) {
                 return [
                     'username' => $msg->username,
                     'message' => $msg->message,
                     'timestamp' => $msg->created_at->toIso8601String(),
                 ];
-            });
+            })
+            ->values();
 
         return response()->json([
             'success' => true,

@@ -1,0 +1,1 @@
+../../testing-endtoend/ViewAIClassificationTest.php
