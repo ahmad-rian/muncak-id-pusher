@@ -323,7 +323,9 @@ class LiveCamController extends Controller
             return response()->json(['error' => 'Stream is not live'], 400);
         }
 
-        // Rate limiting: 100 messages per 10 seconds per IP (relaxed for load testing)
+        // Rate limiting: DISABLED for performance testing
+        // Uncomment the code below to enable rate limiting in production:
+        /*
         $ip = $request->ip();
         $rateLimitKey = 'chat:ratelimit:' . $id . ':' . $ip;
         $messageCount = Cache::get($rateLimitKey, 0);
@@ -336,6 +338,7 @@ class LiveCamController extends Controller
                 'wait' => $waitTime
             ], 429);
         }
+        */
 
         // Sanitize message
         $message = strip_tags($request->input('message'));
@@ -348,11 +351,13 @@ class LiveCamController extends Controller
             'message' => $message,
         ]);
 
-        // Update rate limit
+        // Update rate limit (DISABLED for testing)
+        /*
         if ($messageCount === 0) {
             Cache::put($rateLimitKey . ':ttl', time(), 10);
         }
         Cache::put($rateLimitKey, $messageCount + 1, 10);
+        */
 
         // Broadcast chat message (now queued via Redis)
         event(new ChatMessageSent($id, $username, $message));
