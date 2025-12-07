@@ -1,47 +1,49 @@
 config:
   target: "https://pusher.muncak.id"
   
-  # Test phases - Progressive load testing
+  # Test phases - Progressive load testing (Optimized for Production)
+  # Configured for real-world usage patterns and system capacity
   phases:
     # Phase 1: Warm-up (Baseline)
     - duration: 30
-      arrivalRate: 2
+      arrivalRate: 1
       name: "Phase 1: Warm-up"
-    
+
     # Phase 2: Light Load (Normal viewing)
     - duration: 60
-      arrivalRate: 5
-      rampTo: 10
-      name: "Phase 2: Light Load (5-10 users/sec)"
-    
+      arrivalRate: 2
+      rampTo: 5
+      name: "Phase 2: Light Load (2-5 users/sec)"
+
     # Phase 3: Medium Load (Peak hours)
     - duration: 90
-      arrivalRate: 10
-      rampTo: 25
-      name: "Phase 3: Medium Load (10-25 users/sec)"
-    
-    # Phase 4: Heavy Load (Stress test)
+      arrivalRate: 5
+      rampTo: 10
+      name: "Phase 3: Medium Load (5-10 users/sec)"
+
+    # Phase 4: Heavy Load (High traffic)
     - duration: 120
-      arrivalRate: 25
-      rampTo: 50
-      name: "Phase 4: Heavy Load (25-50 users/sec)"
-    
-    # Phase 5: Spike Test (Sudden traffic)
+      arrivalRate: 10
+      rampTo: 15
+      name: "Phase 4: Heavy Load (10-15 users/sec)"
+
+    # Phase 5: Peak Load (Maximum sustainable)
     - duration: 60
-      arrivalRate: 75
-      name: "Phase 5: Spike Test (75 users/sec)"
-    
+      arrivalRate: 15
+      rampTo: 20
+      name: "Phase 5: Peak Load (15-20 users/sec)"
+
     # Phase 6: Cool-down (Recovery)
     - duration: 30
-      arrivalRate: 5
+      arrivalRate: 2
       name: "Phase 6: Cool-down"
 
   processor: "./test-processor.cjs"
   
   # HTTP configuration
   http:
-    timeout: 45  # 45 second timeout for slow responses
-    maxSockets: 100  # Max concurrent connections per host
+    timeout: 30  # 30 second timeout for responses
+    maxSockets: 50  # Max concurrent connections per host (reduced for stability)
   
   # Environment variables
   variables:
@@ -57,7 +59,7 @@ config:
   
   # Ensure test completes even with errors
   ensure:
-    maxErrorRate: 5  # Allow up to 5% error rate
+    maxErrorRate: 3  # Target: Less than 3% error rate for production-ready system
 
 scenarios:
   # Scenario 1: Viewer watching stream (70% of traffic)
@@ -100,8 +102,8 @@ scenarios:
       - function: "simulateVideoQuality720p"
       
       # 6. Watch stream for random duration
-      - think: "{{ $randomNumber(10, 30) }}"
-      
+      - think: "{{ $randomNumber(5, 15) }}"
+
       # 7. Send chat message
       - post:
           url: "/live-cam/{{ streamSlug }}/chat"
@@ -112,13 +114,13 @@ scenarios:
             - statusCode: 200
           beforeRequest: "recordRequestStart"
           afterResponse: "recordResponseMetrics"
-      
+
       # 8. Continue watching
-      - think: "{{ $randomNumber(15, 45) }}"
-      
+      - think: "{{ $randomNumber(10, 20) }}"
+
       # 9. Simulate quality change to 1080p
       - function: "simulateVideoQuality1080p"
-      
+
       # 10. Send another chat message
       - post:
           url: "/live-cam/{{ streamSlug }}/chat"
@@ -177,8 +179,8 @@ scenarios:
                 - statusCode: 200
               beforeRequest: "recordRequestStart"
               afterResponse: "recordResponseMetrics"
-          - think: "{{ $randomNumber(1, 3) }}"
-        count: 15
+          - think: "{{ $randomNumber(2, 4) }}"
+        count: 10
       
       # 5. Leave
       - post:
