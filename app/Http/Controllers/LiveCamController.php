@@ -132,8 +132,19 @@ class LiveCamController extends Controller
             session(['livecam_username' => $username]);
         }
 
-        // Increment total views
-        $stream->increment('total_views');
+        // OPTIMIZATION: Increment total views asynchronously to avoid database lock contention
+        // Under high load, synchronous increment causes row-level locking and timeouts
+        // Process after response is sent to user
+        dispatch(function () use ($stream) {
+            try {
+                LiveStream::where('id', $stream->id)->increment('total_views');
+            } catch (\Exception $e) {
+                \Log::error('Failed to increment total views', [
+                    'stream_id' => $stream->id,
+                    'error' => $e->getMessage()
+                ]);
+            }
+        })->afterResponse();
 
         return view('live-cam.show', compact('stream', 'username'));
     }

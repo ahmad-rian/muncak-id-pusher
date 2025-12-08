@@ -66,12 +66,9 @@ scenarios:
   - name: "Viewer Watching Stream"
     weight: 70
     flow:
-      # 1. Load stream page
+      # 1. Load stream page (HTML view, no JSON capture needed for perf testing)
       - get:
           url: "/live-cam/{{ streamSlug }}"
-          capture:
-            - json: "$.stream_id"
-              as: "streamId"
           expect:
             - statusCode: 200
           beforeRequest: "recordRequestStart"
