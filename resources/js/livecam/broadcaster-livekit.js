@@ -219,6 +219,27 @@ async function switchCamera() {
         const newFacingMode = currentFacingMode === 'user' ? 'environment' : 'user';
         console.log(`🔄 Switching camera from ${currentFacingMode} to ${newFacingMode}`);
 
+        // IMPORTANT: Stop all current camera tracks FIRST to release the camera
+        // This prevents CAMERA_IN_USE error
+        if (video.srcObject) {
+            video.srcObject.getTracks().forEach(track => {
+                console.log(`🛑 Stopping track: ${track.kind} - ${track.label}`);
+                track.stop();
+            });
+            video.srcObject = null; // Clear the video source
+        }
+
+        // Stop local tracks array
+        localTracks.forEach(track => {
+            if (track.kind === 'video') {
+                console.log(`🛑 Stopping local video track: ${track.label}`);
+                track.stop();
+            }
+        });
+
+        // Small delay to ensure camera is fully released
+        await new Promise(resolve => setTimeout(resolve, 300));
+
         // Get new stream
         const newStream = await getCameraStream(newFacingMode);
         const newVideoTrack = newStream.getVideoTracks()[0];
@@ -226,8 +247,7 @@ async function switchCamera() {
 
         // If broadcasting, replace the video track
         if (livekitRoom && livekitRoom.localParticipant) {
-            // Get old tracks from local tracks array
-            const oldVideoTrack = localTracks.find(t => t.kind === 'video');
+            // Get old audio track (we already stopped video tracks above)
             const oldAudioTrack = localTracks.find(t => t.kind === 'audio');
 
             try {
@@ -256,12 +276,6 @@ async function switchCamera() {
                     simulcast: true,
                 });
                 console.log('✅ New video track published');
-
-                // Stop old video track AFTER publishing new one (to avoid black screen)
-                if (oldVideoTrack) {
-                    oldVideoTrack.stop();
-                    console.log('✅ Old video track stopped');
-                }
 
                 // Update local tracks - keep audio track, replace video
                 localTracks = [newVideoTrack, oldAudioTrack || newAudioTrack];
