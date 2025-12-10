@@ -101,11 +101,13 @@ async function getAvailableCameras() {
 
 // Get camera stream with facing mode
 async function getCameraStream(facingMode = 'user') {
+    console.log(`📹 Requesting camera with facingMode: ${facingMode}`);
+
     try {
-        // Try with facingMode first (works on most devices)
+        // Attempt 1: Try with ideal facingMode (works on most devices)
         const constraints = {
             video: {
-                facingMode: { ideal: facingMode }, // Use 'ideal' instead of exact
+                facingMode: { ideal: facingMode },
                 width: { ideal: 1280 },
                 height: { ideal: 720 },
                 frameRate: { ideal: 30 }
@@ -113,40 +115,91 @@ async function getCameraStream(facingMode = 'user') {
             audio: true
         };
 
-        console.log(`📹 Requesting camera with facingMode: ${facingMode}`);
-
         try {
             const stream = await navigator.mediaDevices.getUserMedia(constraints);
+            console.log('✅ Camera acquired with ideal facingMode');
             currentFacingMode = facingMode;
             return stream;
         } catch (firstErr) {
-            console.warn('⚠️ Failed with facingMode, trying with exact constraint:', firstErr);
+            console.warn('⚠️ Attempt 1 failed, trying exact constraint:', firstErr.message);
 
-            // Try with exact facingMode as fallback
-            const exactConstraints = {
-                video: {
-                    facingMode: { exact: facingMode },
-                    width: { ideal: 1280 },
-                    height: { ideal: 720 },
-                    frameRate: { ideal: 30 }
-                },
-                audio: true
-            };
+            // Attempt 2: Try with exact facingMode
+            try {
+                const exactConstraints = {
+                    video: {
+                        facingMode: { exact: facingMode },
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
+                        frameRate: { ideal: 30 }
+                    },
+                    audio: true
+                };
 
-            const stream = await navigator.mediaDevices.getUserMedia(exactConstraints);
-            currentFacingMode = facingMode;
-            return stream;
+                const stream = await navigator.mediaDevices.getUserMedia(exactConstraints);
+                console.log('✅ Camera acquired with exact facingMode');
+                currentFacingMode = facingMode;
+                return stream;
+            } catch (secondErr) {
+                console.warn('⚠️ Attempt 2 failed, trying deviceId method:', secondErr.message);
+
+                // Attempt 3: For Chrome Android - use deviceId instead of facingMode
+                const devices = await navigator.mediaDevices.enumerateDevices();
+                const videoDevices = devices.filter(device => device.kind === 'videoinput');
+
+                console.log(`📹 Found ${videoDevices.length} video devices:`, videoDevices);
+
+                if (videoDevices.length === 0) {
+                    throw new Error('NO_CAMERA_FOUND');
+                }
+
+                // Try to find the right camera by label or position
+                let targetDevice = null;
+
+                if (facingMode === 'environment') {
+                    // Look for back camera (usually has "back" or "rear" in label, or is device 0)
+                    targetDevice = videoDevices.find(d =>
+                        d.label.toLowerCase().includes('back') ||
+                        d.label.toLowerCase().includes('rear') ||
+                        d.label.toLowerCase().includes('environment')
+                    ) || videoDevices[0]; // Fallback to first camera
+                } else {
+                    // Look for front camera (usually has "front" in label, or is device 1)
+                    targetDevice = videoDevices.find(d =>
+                        d.label.toLowerCase().includes('front') ||
+                        d.label.toLowerCase().includes('user')
+                    ) || videoDevices[videoDevices.length > 1 ? 1 : 0]; // Fallback to second camera or first if only one
+                }
+
+                console.log(`📹 Selecting device: ${targetDevice.label} (${targetDevice.deviceId})`);
+
+                const deviceConstraints = {
+                    video: {
+                        deviceId: { exact: targetDevice.deviceId },
+                        width: { ideal: 1280 },
+                        height: { ideal: 720 },
+                        frameRate: { ideal: 30 }
+                    },
+                    audio: true
+                };
+
+                const stream = await navigator.mediaDevices.getUserMedia(deviceConstraints);
+                console.log('✅ Camera acquired using deviceId');
+                currentFacingMode = facingMode;
+                return stream;
+            }
         }
     } catch (err) {
-        console.error('❌ Failed to get camera stream:', err);
+        console.error('❌ All camera acquisition attempts failed:', err);
 
-        // Provide helpful error message
-        if (err.name === 'OverconstrainedError') {
-            throw new Error(`Camera with ${facingMode} facing mode not available. Try the other camera button.`);
+        // Provide helpful error messages
+        if (err.message === 'NO_CAMERA_FOUND' || err.name === 'NotFoundError') {
+            throw new Error('NO_CAMERA_FOUND');
         } else if (err.name === 'NotAllowedError') {
-            throw new Error('Camera permission denied. Please allow camera access in browser settings.');
-        } else if (err.name === 'NotFoundError') {
-            throw new Error('No camera found. Please check your camera connection.');
+            throw new Error('PERMISSION_DENIED');
+        } else if (err.name === 'NotReadableError') {
+            throw new Error('CAMERA_IN_USE');
+        } else if (err.name === 'OverconstrainedError') {
+            throw new Error(`Camera with ${facingMode} facing mode not available on this device.`);
         } else {
             throw new Error('Camera error: ' + err.message);
         }
