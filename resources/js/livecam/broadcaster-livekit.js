@@ -822,35 +822,55 @@ async function requestAllCameraPermissions() {
         const alreadyGranted = await checkCameraPermission();
         if (alreadyGranted) {
             console.log('✅ Camera permission already granted');
+            return true;
         }
 
-        // Request front camera first (this will trigger browser permission prompt)
-        const frontStream = await navigator.mediaDevices.getUserMedia({
-            video: { facingMode: 'user' },
+        // Request ANY video device first to get permission
+        // This is important for Chrome Android to populate device labels
+        const anyStream = await navigator.mediaDevices.getUserMedia({
+            video: true,
             audio: false
         });
-        console.log('✅ Front camera permission granted');
+        console.log('✅ Camera permission granted');
 
-        // Stop front camera tracks
-        frontStream.getTracks().forEach(track => track.stop());
+        // Stop the stream
+        anyStream.getTracks().forEach(track => track.stop());
 
-        // Small delay to avoid overwhelming the browser
+        // Small delay to let browser update device info
         await new Promise(resolve => setTimeout(resolve, 500));
 
-        // Then, request back camera (separate permission in some browsers)
-        try {
-            const backStream = await navigator.mediaDevices.getUserMedia({
-                video: { facingMode: 'environment' },
-                audio: false
-            });
-            console.log('✅ Back camera permission granted');
+        // NOW enumerate devices - labels will be available
+        const devices = await navigator.mediaDevices.enumerateDevices();
+        const videoDevices = devices.filter(device => device.kind === 'videoinput');
+        console.log(`📹 After permission, found ${videoDevices.length} cameras:`, videoDevices.map(d => d.label));
 
-            // Stop back camera tracks
-            backStream.getTracks().forEach(track => track.stop());
-        } catch (backErr) {
-            console.warn('⚠️ Back camera not available or permission denied:', backErr);
-            // This is OK - device might only have front camera
-            // Or browser only asks for permission once for all cameras
+        // Try to access both cameras if available (to ensure full permission)
+        if (videoDevices.length > 1) {
+            // Request front camera
+            try {
+                const frontStream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'user' },
+                    audio: false
+                });
+                console.log('✅ Front camera accessible');
+                frontStream.getTracks().forEach(track => track.stop());
+            } catch (frontErr) {
+                console.warn('⚠️ Front camera not accessible:', frontErr);
+            }
+
+            await new Promise(resolve => setTimeout(resolve, 300));
+
+            // Request back camera
+            try {
+                const backStream = await navigator.mediaDevices.getUserMedia({
+                    video: { facingMode: 'environment' },
+                    audio: false
+                });
+                console.log('✅ Back camera accessible');
+                backStream.getTracks().forEach(track => track.stop());
+            } catch (backErr) {
+                console.warn('⚠️ Back camera not accessible:', backErr);
+            }
         }
 
         return true;
