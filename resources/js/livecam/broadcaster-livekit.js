@@ -102,9 +102,10 @@ async function getAvailableCameras() {
 // Get camera stream with facing mode
 async function getCameraStream(facingMode = 'user') {
     try {
+        // Try with facingMode first (works on most devices)
         const constraints = {
             video: {
-                facingMode: facingMode,
+                facingMode: { ideal: facingMode }, // Use 'ideal' instead of exact
                 width: { ideal: 1280 },
                 height: { ideal: 720 },
                 frameRate: { ideal: 30 }
@@ -113,15 +114,42 @@ async function getCameraStream(facingMode = 'user') {
         };
 
         console.log(`📹 Requesting camera with facingMode: ${facingMode}`);
-        const stream = await navigator.mediaDevices.getUserMedia(constraints);
 
-        // Update current facing mode
-        currentFacingMode = facingMode;
+        try {
+            const stream = await navigator.mediaDevices.getUserMedia(constraints);
+            currentFacingMode = facingMode;
+            return stream;
+        } catch (firstErr) {
+            console.warn('⚠️ Failed with facingMode, trying with exact constraint:', firstErr);
 
-        return stream;
+            // Try with exact facingMode as fallback
+            const exactConstraints = {
+                video: {
+                    facingMode: { exact: facingMode },
+                    width: { ideal: 1280 },
+                    height: { ideal: 720 },
+                    frameRate: { ideal: 30 }
+                },
+                audio: true
+            };
+
+            const stream = await navigator.mediaDevices.getUserMedia(exactConstraints);
+            currentFacingMode = facingMode;
+            return stream;
+        }
     } catch (err) {
-        console.error('Failed to get camera stream:', err);
-        throw err;
+        console.error('❌ Failed to get camera stream:', err);
+
+        // Provide helpful error message
+        if (err.name === 'OverconstrainedError') {
+            throw new Error(`Camera with ${facingMode} facing mode not available. Try the other camera button.`);
+        } else if (err.name === 'NotAllowedError') {
+            throw new Error('Camera permission denied. Please allow camera access in browser settings.');
+        } else if (err.name === 'NotFoundError') {
+            throw new Error('No camera found. Please check your camera connection.');
+        } else {
+            throw new Error('Camera error: ' + err.message);
+        }
     }
 }
 
@@ -145,15 +173,23 @@ async function switchCamera() {
 
         // If broadcasting, replace the video track
         if (livekitRoom && livekitRoom.localParticipant) {
-            // Get old tracks before stopping them
+            // Get old tracks from local tracks array
             const oldVideoTrack = localTracks.find(t => t.kind === 'video');
             const oldAudioTrack = localTracks.find(t => t.kind === 'audio');
 
             try {
-                // Unpublish old video track using the MediaStreamTrack directly
-                if (oldVideoTrack) {
+                // Find the published video track publication
+                let oldVideoPublication = null;
+                livekitRoom.localParticipant.videoTracks.forEach((publication) => {
+                    if (publication.trackName === 'camera') {
+                        oldVideoPublication = publication;
+                    }
+                });
+
+                // Unpublish old video track using the publication
+                if (oldVideoPublication && oldVideoPublication.track) {
                     try {
-                        await livekitRoom.localParticipant.unpublishTrack(oldVideoTrack);
+                        await livekitRoom.localParticipant.unpublishTrack(oldVideoPublication.track);
                         console.log('✅ Old video track unpublished');
                     } catch (unpublishErr) {
                         console.warn('⚠️ Failed to unpublish old track (might already be unpublished):', unpublishErr);
@@ -174,18 +210,23 @@ async function switchCamera() {
                     console.log('✅ Old video track stopped');
                 }
 
-                // Keep using the same audio track (don't republish audio)
+                // Update local tracks - keep audio track, replace video
                 localTracks = [newVideoTrack, oldAudioTrack || newAudioTrack];
+
+                // Stop new audio track if we're keeping the old one
+                if (oldAudioTrack && newAudioTrack && oldAudioTrack !== newAudioTrack) {
+                    newAudioTrack.stop();
+                }
 
             } catch (publishErr) {
                 console.error('❌ Failed to replace track during broadcast:', publishErr);
-                // If publish fails, stop the new track and keep the old one
+                // If publish fails, stop the new tracks and keep the old ones
                 newVideoTrack.stop();
                 if (newAudioTrack) newAudioTrack.stop();
-                throw publishErr;
+                throw new Error('Could not start video source: ' + publishErr.message);
             }
         } else {
-            // Not broadcasting, just stop old tracks
+            // Not broadcasting, just replace preview tracks
             if (video.srcObject) {
                 video.srcObject.getTracks().forEach(track => track.stop());
             }
