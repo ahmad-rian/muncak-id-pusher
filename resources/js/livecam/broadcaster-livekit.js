@@ -742,12 +742,36 @@ if (enableCameraBtn) {
     });
 }
 
+// Check if camera permission is already granted
+async function checkCameraPermission() {
+    try {
+        // Check if Permissions API is supported
+        if (navigator.permissions && navigator.permissions.query) {
+            const result = await navigator.permissions.query({ name: 'camera' });
+            console.log('📹 Camera permission status:', result.state);
+            return result.state === 'granted';
+        }
+
+        // Fallback: For browsers that don't support Permissions API (like Safari iOS)
+        return false;
+    } catch (err) {
+        console.warn('⚠️ Permissions API not supported:', err);
+        return false;
+    }
+}
+
 // Request permission for both cameras (front & back)
 async function requestAllCameraPermissions() {
     console.log('🔐 Requesting access to all cameras...');
 
     try {
-        // First, request front camera
+        // Check if permission already granted
+        const alreadyGranted = await checkCameraPermission();
+        if (alreadyGranted) {
+            console.log('✅ Camera permission already granted');
+        }
+
+        // Request front camera first (this will trigger browser permission prompt)
         const frontStream = await navigator.mediaDevices.getUserMedia({
             video: { facingMode: 'user' },
             audio: false
@@ -757,7 +781,10 @@ async function requestAllCameraPermissions() {
         // Stop front camera tracks
         frontStream.getTracks().forEach(track => track.stop());
 
-        // Then, request back camera
+        // Small delay to avoid overwhelming the browser
+        await new Promise(resolve => setTimeout(resolve, 500));
+
+        // Then, request back camera (separate permission in some browsers)
         try {
             const backStream = await navigator.mediaDevices.getUserMedia({
                 video: { facingMode: 'environment' },
@@ -770,12 +797,23 @@ async function requestAllCameraPermissions() {
         } catch (backErr) {
             console.warn('⚠️ Back camera not available or permission denied:', backErr);
             // This is OK - device might only have front camera
+            // Or browser only asks for permission once for all cameras
         }
 
         return true;
     } catch (err) {
         console.error('❌ Camera permission request failed:', err);
-        throw err;
+
+        // Provide helpful error messages based on error type
+        if (err.name === 'NotAllowedError') {
+            throw new Error('PERMISSION_DENIED');
+        } else if (err.name === 'NotFoundError') {
+            throw new Error('NO_CAMERA_FOUND');
+        } else if (err.name === 'NotReadableError') {
+            throw new Error('CAMERA_IN_USE');
+        } else {
+            throw err;
+        }
     }
 }
 
@@ -815,17 +853,57 @@ async function initializeCamera() {
     } catch (err) {
         console.error('❌ Camera initialization failed:', err);
 
-        // Show error message
+        // Show error message with helpful instructions
         if (noCameraDiv) {
             noCameraDiv.classList.remove('hidden');
             const errorMsg = noCameraDiv.querySelector('p');
             if (errorMsg) {
-                if (err.name === 'NotAllowedError') {
-                    errorMsg.textContent = '📷 Camera permission denied. Please click "Enable Camera" and allow access to front and back cameras.';
+                if (err.message === 'PERMISSION_DENIED') {
+                    // Permission denied - provide browser-specific instructions
+                    const userAgent = navigator.userAgent.toLowerCase();
+                    let instructions = '';
+
+                    if (userAgent.includes('chrome') && !userAgent.includes('edg')) {
+                        instructions = '📷 Kamera ditolak! Di Chrome: Klik ikon 🔒 di address bar → Site settings → Camera → Allow';
+                    } else if (userAgent.includes('safari') && !userAgent.includes('chrome')) {
+                        instructions = '📷 Kamera ditolak! Di Safari: Settings → Safari → Camera → Allow for This Website';
+                    } else if (userAgent.includes('firefox')) {
+                        instructions = '📷 Kamera ditolak! Di Firefox: Klik ikon 🔒 di address bar → Permissions → Camera → Allow';
+                    } else if (userAgent.includes('edg')) {
+                        instructions = '📷 Kamera ditolak! Di Edge: Klik ikon 🔒 di address bar → Permissions → Camera → Allow';
+                    } else {
+                        instructions = '📷 Kamera ditolak! Silakan allow akses kamera di pengaturan browser Anda, lalu refresh halaman.';
+                    }
+
+                    errorMsg.innerHTML = `
+                        <strong>Permission Denied</strong><br>
+                        ${instructions}<br><br>
+                        <small>Setelah allow, klik "Enable Camera" lagi.</small>
+                    `;
+                } else if (err.message === 'NO_CAMERA_FOUND') {
+                    errorMsg.innerHTML = `
+                        <strong>Kamera tidak ditemukan</strong><br>
+                        Pastikan device Anda memiliki kamera dan tidak sedang digunakan aplikasi lain.
+                    `;
+                } else if (err.message === 'CAMERA_IN_USE') {
+                    errorMsg.innerHTML = `
+                        <strong>Kamera sedang digunakan</strong><br>
+                        Tutup aplikasi lain yang menggunakan kamera, lalu coba lagi.
+                    `;
+                } else if (err.name === 'NotAllowedError') {
+                    errorMsg.innerHTML = `
+                        <strong>Akses kamera ditolak</strong><br>
+                        Klik "Enable Camera" dan allow akses kamera saat browser menanyakan.<br>
+                        Pastikan allow untuk <strong>front dan back camera</strong>.
+                    `;
                 } else if (err.name === 'NotFoundError') {
-                    errorMsg.textContent = 'No camera detected. Please connect a camera.';
+                    errorMsg.textContent = 'Kamera tidak ditemukan. Pastikan device memiliki kamera.';
                 } else {
-                    errorMsg.textContent = 'Camera error: ' + err.message;
+                    errorMsg.innerHTML = `
+                        <strong>Camera error:</strong><br>
+                        ${err.message}<br><br>
+                        <small>Coba refresh halaman atau gunakan browser lain.</small>
+                    `;
                 }
             }
         }
