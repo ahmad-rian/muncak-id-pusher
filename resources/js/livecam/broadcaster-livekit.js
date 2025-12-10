@@ -742,6 +742,43 @@ if (enableCameraBtn) {
     });
 }
 
+// Request permission for both cameras (front & back)
+async function requestAllCameraPermissions() {
+    console.log('🔐 Requesting access to all cameras...');
+
+    try {
+        // First, request front camera
+        const frontStream = await navigator.mediaDevices.getUserMedia({
+            video: { facingMode: 'user' },
+            audio: false
+        });
+        console.log('✅ Front camera permission granted');
+
+        // Stop front camera tracks
+        frontStream.getTracks().forEach(track => track.stop());
+
+        // Then, request back camera
+        try {
+            const backStream = await navigator.mediaDevices.getUserMedia({
+                video: { facingMode: 'environment' },
+                audio: false
+            });
+            console.log('✅ Back camera permission granted');
+
+            // Stop back camera tracks
+            backStream.getTracks().forEach(track => track.stop());
+        } catch (backErr) {
+            console.warn('⚠️ Back camera not available or permission denied:', backErr);
+            // This is OK - device might only have front camera
+        }
+
+        return true;
+    } catch (err) {
+        console.error('❌ Camera permission request failed:', err);
+        throw err;
+    }
+}
+
 // Initialize camera function
 async function initializeCamera() {
     try {
@@ -752,7 +789,10 @@ async function initializeCamera() {
             noCameraDiv.classList.add('hidden');
         }
 
-        // Get available cameras first
+        // ✅ Request permission for ALL cameras first (front & back)
+        await requestAllCameraPermissions();
+
+        // Get available cameras after permission granted
         await getAvailableCameras();
 
         // Get camera stream with current facing mode (no audio for preview)
@@ -781,7 +821,7 @@ async function initializeCamera() {
             const errorMsg = noCameraDiv.querySelector('p');
             if (errorMsg) {
                 if (err.name === 'NotAllowedError') {
-                    errorMsg.textContent = 'Camera permission denied. Please allow camera access.';
+                    errorMsg.textContent = '📷 Camera permission denied. Please click "Enable Camera" and allow access to front and back cameras.';
                 } else if (err.name === 'NotFoundError') {
                     errorMsg.textContent = 'No camera detected. Please connect a camera.';
                 } else {
