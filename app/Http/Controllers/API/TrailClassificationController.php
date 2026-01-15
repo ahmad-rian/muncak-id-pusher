@@ -138,33 +138,42 @@ class TrailClassificationController extends Controller
                 $videoData = preg_replace('/\s+/', '', $videoData);
                 $videoData = base64_decode($videoData, true); // strict mode
 
-                if ($videoData !== false && strlen($videoData) > 100) {
+                if ($videoData !== false && strlen($videoData) > 1000) {
                     // Verify it's a valid video file by checking magic bytes
                     $header = substr($videoData, 0, 4);
                     $isWebm = ($header === "\x1a\x45\xdf\xa3"); // EBML header for WebM
                     $isMp4 = (substr($videoData, 4, 4) === "ftyp"); // MP4 signature
 
-                    if (!$isWebm && !$isMp4) {
-                        Log::warning('Video data does not appear to be a valid video file', [
+                    if ($isWebm || $isMp4) {
+                        // Valid video - save it
+                        $videoFilename = 'trail_' . $stream->hiking_trail_id . '.' . $videoExtension;
+                        $videoPath = $videoDir . '/' . $videoFilename;
+                        file_put_contents($videoPath, $videoData);
+
+                        $videoRelativePath = 'classification_videos/' . $videoFilename;
+                        $videoDuration = $request->input('video_duration', 5);
+
+                        Log::info('Video saved for trail classification', [
+                            'trail_id' => $stream->hiking_trail_id,
+                            'video_path' => $videoRelativePath,
+                            'video_size' => strlen($videoData),
+                            'duration' => $videoDuration,
+                            'format' => $isWebm ? 'webm' : 'mp4'
+                        ]);
+                    } else {
+                        // Invalid video - skip saving, log for debugging
+                        Log::warning('Skipping invalid video file - corrupted or unsupported format', [
                             'trail_id' => $stream->hiking_trail_id,
                             'header_hex' => bin2hex($header),
-                            'data_size' => strlen($videoData)
+                            'data_size' => strlen($videoData),
+                            'expected' => 'WebM (1a45dfa3) or MP4 (ftyp)'
                         ]);
                     }
-
-                    // Save video dengan nama fixed per TRAIL (overwrite old video)
-                    $videoFilename = 'trail_' . $stream->hiking_trail_id . '.' . $videoExtension;
-                    $videoPath = $videoDir . '/' . $videoFilename;
-                    file_put_contents($videoPath, $videoData);
-
-                    $videoRelativePath = 'classification_videos/' . $videoFilename;
-                    $videoDuration = $request->input('video_duration', 5);
-
-                    Log::info('Video saved for trail classification', [
+                } else {
+                    Log::warning('Video data invalid or too small', [
                         'trail_id' => $stream->hiking_trail_id,
-                        'video_path' => $videoRelativePath,
-                        'video_size' => strlen($videoData),
-                        'duration' => $videoDuration
+                        'decode_success' => $videoData !== false,
+                        'data_size' => $videoData !== false ? strlen($videoData) : 0
                     ]);
                 }
             }

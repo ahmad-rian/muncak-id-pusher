@@ -773,7 +773,7 @@ function recordVideoClip(stream, durationMs) {
 
             const mediaRecorder = new MediaRecorder(recordingStream, {
                 mimeType: selectedMimeType,
-                videoBitsPerSecond: 1000000 // 1 Mbps for smaller file size
+                videoBitsPerSecond: 500000 // 500 Kbps - safe for 2MB PHP limit
             });
 
             mediaRecorder.ondataavailable = (e) => {
