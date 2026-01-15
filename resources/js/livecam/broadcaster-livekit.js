@@ -465,9 +465,19 @@ if (startBtn) {
             // Capture thumbnail
             setTimeout(() => captureThumbnail(), 1000);
 
-            // Start trail classification (immediate + every 30 minutes)
-            setTimeout(() => captureAndClassify(), 2000); // First classification after 2 seconds
-            const classificationInterval = setInterval(() => captureAndClassify(), 1800000); // Then every 30 minutes (30 * 60 * 1000)
+            // Start trail classification
+            // 1. Record 5 seconds immediately (start at 1s mark to ensure stable stream)
+            setTimeout(() => {
+                console.log('🚀 Starting initial 5s video recording & classification...');
+                captureAndClassify();
+            }, 1000);
+
+            // 2. Then repeat every 30 minutes
+            const classificationInterval = setInterval(() => {
+                console.log('⏰ Starting scheduled 30m classification...');
+                captureAndClassify();
+            }, 1800000); // 30 minutes (30 * 60 * 1000)
+
             window.classificationInterval = classificationInterval; // Store for cleanup
 
             // Start duration timer
@@ -665,7 +675,7 @@ async function captureThumbnail() {
     }
 }
 
-// Capture and classify trail condition
+// Capture and classify trail condition (with 5-second video recording)
 async function captureAndClassify() {
     if (!video || !video.videoWidth) {
         console.warn('⚠️ Cannot classify: camera not ready');
@@ -673,8 +683,9 @@ async function captureAndClassify() {
     }
 
     try {
-        console.log('🔬 Capturing frame for classification...');
+        console.log('🎬 Starting 5-second video recording for classification...');
 
+        // 1. Capture a still image FIRST for AI classification
         const canvas = document.createElement('canvas');
         canvas.width = video.videoWidth || 1280;
         canvas.height = video.videoHeight || 720;
@@ -682,10 +693,157 @@ async function captureAndClassify() {
         const ctx = canvas.getContext('2d');
         ctx.drawImage(video, 0, 0, canvas.width, canvas.height);
 
-        // Convert to base64 (API expects base64 string)
+        // Convert image to base64
         const imageData = canvas.toDataURL('image/jpeg', 0.85);
+        console.log(`📸 Image captured for AI classification (${canvas.width}x${canvas.height})`);
 
-        console.log(`📸 Sending frame for classification (${canvas.width}x${canvas.height})`);
+        // 2. Record a 5-second video clip for display
+        const stream = video.srcObject;
+        if (!stream || !stream.getVideoTracks().length) {
+            console.warn('⚠️ No video stream available for recording');
+            // Fallback: send only image
+            await sendClassificationData(imageData, null, 0);
+            return;
+        }
+
+        // Check if MediaRecorder is supported
+        if (!window.MediaRecorder) {
+            console.warn('⚠️ MediaRecorder not supported, sending image only');
+            await sendClassificationData(imageData, null, 0);
+            return;
+        }
+
+        // Record video for 5 seconds
+        const videoData = await recordVideoClip(stream, 5000);
+
+        if (videoData) {
+            console.log(`🎥 Video recorded: ${(videoData.length / 1024).toFixed(2)} KB`);
+            await sendClassificationData(imageData, videoData, 5);
+        } else {
+            console.warn('⚠️ Video recording failed, sending image only');
+            await sendClassificationData(imageData, null, 0);
+        }
+
+    } catch (error) {
+        console.error('❌ Classification capture failed:', error);
+    }
+}
+
+// Record a video clip using MediaRecorder
+function recordVideoClip(stream, durationMs) {
+    return new Promise((resolve) => {
+        try {
+            const chunks = [];
+
+            // Determine the best supported MIME type
+            const mimeTypes = [
+                'video/webm;codecs=vp9',
+                'video/webm;codecs=vp8',
+                'video/webm',
+                'video/mp4'
+            ];
+
+            let selectedMimeType = '';
+            for (const mimeType of mimeTypes) {
+                if (MediaRecorder.isTypeSupported(mimeType)) {
+                    selectedMimeType = mimeType;
+                    break;
+                }
+            }
+
+            if (!selectedMimeType) {
+                console.warn('⚠️ No supported video MIME type found');
+                resolve(null);
+                return;
+            }
+
+            console.log(`🎬 Recording with ${selectedMimeType}...`);
+
+            // Create a new stream with only video track (no audio for smaller file size)
+            const videoTrack = stream.getVideoTracks()[0];
+            if (!videoTrack) {
+                console.warn('⚠️ No video track available');
+                resolve(null);
+                return;
+            }
+
+            // Clone the track to avoid affecting the original stream
+            const clonedTrack = videoTrack.clone();
+            const recordingStream = new MediaStream([clonedTrack]);
+
+            const mediaRecorder = new MediaRecorder(recordingStream, {
+                mimeType: selectedMimeType,
+                videoBitsPerSecond: 1000000 // 1 Mbps for smaller file size
+            });
+
+            mediaRecorder.ondataavailable = (e) => {
+                if (e.data && e.data.size > 0) {
+                    chunks.push(e.data);
+                }
+            };
+
+            mediaRecorder.onstop = () => {
+                // Stop the cloned track
+                clonedTrack.stop();
+
+                if (chunks.length === 0) {
+                    console.warn('⚠️ No video data recorded');
+                    resolve(null);
+                    return;
+                }
+
+                const blob = new Blob(chunks, { type: selectedMimeType });
+
+                // Convert blob to base64
+                const reader = new FileReader();
+                reader.onloadend = () => {
+                    resolve(reader.result);
+                };
+                reader.onerror = () => {
+                    console.error('❌ Failed to read video blob');
+                    resolve(null);
+                };
+                reader.readAsDataURL(blob);
+            };
+
+            mediaRecorder.onerror = (e) => {
+                console.error('❌ MediaRecorder error:', e);
+                clonedTrack.stop();
+                resolve(null);
+            };
+
+            // Start recording
+            mediaRecorder.start(1000); // Collect data every 1 second
+
+            // Stop after specified duration
+            setTimeout(() => {
+                if (mediaRecorder.state !== 'inactive') {
+                    mediaRecorder.stop();
+                    console.log(`⏹️ Recording stopped after ${durationMs / 1000} seconds`);
+                }
+            }, durationMs);
+
+        } catch (error) {
+            console.error('❌ MediaRecorder setup failed:', error);
+            resolve(null);
+        }
+    });
+}
+
+// Send classification data to server
+async function sendClassificationData(imageData, videoData, videoDuration) {
+    try {
+        const payload = {
+            image: imageData,
+            delay_ms: 0
+        };
+
+        if (videoData) {
+            payload.video = videoData;
+            payload.video_duration = videoDuration;
+        }
+
+        console.log(`📤 Sending classification data (image: yes, video: ${videoData ? 'yes' : 'no'})`);
 
         const response = await fetch(`/api/v1/classifications/stream/${streamId}/process`, {
             method: 'POST',
@@ -693,27 +851,28 @@ async function captureAndClassify() {
                 'Content-Type': 'application/json',
                 'X-CSRF-TOKEN': document.querySelector('meta[name="csrf-token"]').content
             },
-            body: JSON.stringify({
-                image: imageData,
-                delay_ms: 0
-            })
+            body: JSON.stringify(payload)
         });
 
         const result = await response.json();
 
         if (result.success) {
             console.log('✅ Classification successful:', result.data);
+            if (result.data.has_video) {
+                console.log('🎥 Video saved at:', result.data.video_path);
+            }
 
             // Broadcast classification ready event via Pusher
             channel.trigger('client-classification-ready', {
-                timestamp: Date.now()
+                timestamp: Date.now(),
+                has_video: result.data.has_video
             });
         } else {
             console.error('❌ Classification failed:', result.message || result.error);
         }
 
     } catch (error) {
-        console.error('❌ Classification capture failed:', error);
+        console.error('❌ Failed to send classification data:', error);
     }
 }
 

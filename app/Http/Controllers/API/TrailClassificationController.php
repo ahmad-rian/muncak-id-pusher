@@ -22,13 +22,17 @@ class TrailClassificationController extends Controller
     }
 
     /**
-     * Receive captured frame from viewer dan proses classification
+     * Receive captured frame and video from viewer dan proses classification
+     * Video akan di-overwrite setiap 30 menit untuk menghemat storage
+     * Gambar tetap di-capture untuk klasifikasi tapi tidak ditampilkan di frontend
      */
     public function processFrame(Request $request, $streamId)
     {
         try {
             $request->validate([
-                'image' => 'required|string', // base64 encoded image
+                'image' => 'required|string', // base64 encoded image for AI classification
+                'video' => 'nullable|string', // base64 encoded video (5 seconds)
+                'video_duration' => 'nullable|integer|max:10', // max 10 seconds
                 'delay_ms' => 'nullable|integer',
             ]);
 
@@ -71,50 +75,121 @@ class TrailClassificationController extends Controller
                 ], 400);
             }
 
-            // Save image to public storage (untuk ditampilkan di index)
+            // Save image to public storage (untuk klasifikasi AI, tidak ditampilkan)
             $publicDir = public_path('storage/classifications');
             if (!file_exists($publicDir)) {
                 mkdir($publicDir, 0755, true);
             }
 
-            // Delete old classification image for this TRAIL (keep only latest per trail)
+            // Video directory
+            $videoDir = public_path('storage/classification_videos');
+            if (!file_exists($videoDir)) {
+                mkdir($videoDir, 0755, true);
+            }
+
+            // Delete old classification files for this TRAIL (keep only latest per trail)
             $oldClassification = TrailClassification::where('hiking_trail_id', $stream->hiking_trail_id)
                 ->latest('classified_at')
                 ->first();
 
-            if ($oldClassification && $oldClassification->image_path) {
-                $oldPublicPath = public_path('storage/classifications/' . basename($oldClassification->image_path));
-                if (file_exists($oldPublicPath)) {
-                    @unlink($oldPublicPath);
+            if ($oldClassification) {
+                // Delete old image if exists
+                if ($oldClassification->image_path) {
+                    $oldImagePath = public_path('storage/' . $oldClassification->image_path);
+                    if (file_exists($oldImagePath)) {
+                        @unlink($oldImagePath);
+                    }
+                }
+                // Delete old video if exists
+                if ($oldClassification->video_path) {
+                    $oldVideoPath = public_path('storage/' . $oldClassification->video_path);
+                    if (file_exists($oldVideoPath)) {
+                        @unlink($oldVideoPath);
+                    }
                 }
             }
 
             // Save new image dengan nama fixed per TRAIL (replace old image)
-            $filename = 'trail_' . $stream->hiking_trail_id . '.' . $extension;
-            $publicPath = $publicDir . '/' . $filename;
-            file_put_contents($publicPath, $imageData);
+            $imageFilename = 'trail_' . $stream->hiking_trail_id . '.' . $extension;
+            $imagePath = $publicDir . '/' . $imageFilename;
+            file_put_contents($imagePath, $imageData);
 
             // Store relative path untuk database
-            $imagePath = 'classifications/' . $filename;
+            $imageRelativePath = 'classifications/' . $imageFilename;
+
+            // Process video if provided
+            $videoRelativePath = null;
+            $videoDuration = null;
+
+            if ($request->has('video') && $request->input('video')) {
+                $videoData = $request->input('video');
+
+                // Remove data:video/...;base64, prefix if present
+                // Handle complex MIME types like "video/webm;codecs=vp9"
+                if (preg_match('/^data:video\/([^;,]+)[^,]*;base64,/', $videoData, $videoMatches)) {
+                    $videoData = substr($videoData, strpos($videoData, ',') + 1);
+                    $mimeType = strtolower($videoMatches[1]);
+                    $videoExtension = str_contains($mimeType, 'webm') ? 'webm' : 'mp4';
+                } else {
+                    $videoExtension = 'webm';
+                }
+
+                // Validate base64 data - remove any whitespace that might have been added
+                $videoData = preg_replace('/\s+/', '', $videoData);
+                $videoData = base64_decode($videoData, true); // strict mode
+
+                if ($videoData !== false && strlen($videoData) > 100) {
+                    // Verify it's a valid video file by checking magic bytes
+                    $header = substr($videoData, 0, 4);
+                    $isWebm = ($header === "\x1a\x45\xdf\xa3"); // EBML header for WebM
+                    $isMp4 = (substr($videoData, 4, 4) === "ftyp"); // MP4 signature
+
+                    if (!$isWebm && !$isMp4) {
+                        Log::warning('Video data does not appear to be a valid video file', [
+                            'trail_id' => $stream->hiking_trail_id,
+                            'header_hex' => bin2hex($header),
+                            'data_size' => strlen($videoData)
+                        ]);
+                    }
+
+                    // Save video dengan nama fixed per TRAIL (overwrite old video)
+                    $videoFilename = 'trail_' . $stream->hiking_trail_id . '.' . $videoExtension;
+                    $videoPath = $videoDir . '/' . $videoFilename;
+                    file_put_contents($videoPath, $videoData);
+
+                    $videoRelativePath = 'classification_videos/' . $videoFilename;
+                    $videoDuration = $request->input('video_duration', 5);
+
+                    Log::info('Video saved for trail classification', [
+                        'trail_id' => $stream->hiking_trail_id,
+                        'video_path' => $videoRelativePath,
+                        'video_size' => strlen($videoData),
+                        'duration' => $videoDuration
+                    ]);
+                }
+            }
 
             Log::info('Frame captured for classification', [
                 'stream_id' => $streamId,
                 'image_size' => strlen($imageData),
-                'path' => $imagePath
+                'path' => $imageRelativePath,
+                'has_video' => !is_null($videoRelativePath)
             ]);
 
             // Create new classification record (processing status)
             $classification = TrailClassification::create([
                 'live_stream_id' => $stream->id,
                 'hiking_trail_id' => $stream->hiking_trail_id,
-                'image_path' => $imagePath,
+                'image_path' => $imageRelativePath,
+                'video_path' => $videoRelativePath,
+                'video_duration' => $videoDuration,
                 'stream_delay_ms' => $request->input('delay_ms', 0),
                 'status' => 'processing',
                 'classified_at' => now(),
             ]);
 
-            // Process classification dengan Gemini AI (async-like dengan queue lebih baik, tapi untuk demo kita sync)
-            $result = $this->geminiService->classifyImage($publicPath);
+            // Process classification dengan Gemini AI (menggunakan gambar)
+            $result = $this->geminiService->classifyImage($imagePath);
 
             if ($result) {
                 // Update classification dengan hasil
@@ -149,6 +224,8 @@ class TrailClassificationController extends Controller
                         'visibility_label' => $classification->visibility_label,
                         'recommendation' => $classification->recommendation,
                         'classified_at' => $classification->classified_at->format('H:i:s'),
+                        'has_video' => !is_null($videoRelativePath),
+                        'video_path' => $videoRelativePath ? asset('storage/' . $videoRelativePath) : null,
                     ]
                 ]);
             } else {

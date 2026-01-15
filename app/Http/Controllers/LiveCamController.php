@@ -44,7 +44,7 @@ class LiveCamController extends Controller
         $totalLive = $liveStreams->count();
 
         // Get latest classification per trail (cached for 5 minutes)
-        $recentClassifications = Cache::remember('recent_trail_classifications', 300, function() {
+        $recentClassifications = Cache::remember('recent_trail_classifications', 300, function () {
             $classifications = TrailClassification::with(['liveStream.hikingTrail.gunung', 'hikingTrail'])
                 ->where('status', 'completed')
                 ->whereNotNull('hiking_trail_id')
@@ -58,7 +58,7 @@ class LiveCamController extends Controller
         });
 
         // Get all trails that have classifications for filter (cached and optimized)
-        $availableTrails = Cache::remember('available_trails_with_classifications', 300, function() {
+        $availableTrails = Cache::remember('available_trails_with_classifications', 300, function () {
             return TrailClassification::with('hikingTrail.gunung')
                 ->where('status', 'completed')
                 ->whereNotNull('hiking_trail_id')
@@ -1493,3 +1493,4 @@ class LiveCamController extends Controller
         }
     }
 }
+
