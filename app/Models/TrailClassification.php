@@ -17,6 +17,8 @@ class TrailClassification extends Model
         'crowd_confidence',
         'visibility_confidence',
         'image_path',
+        'video_path',
+        'video_duration',
         'stream_delay_ms',
         'classified_at',
         'status',
@@ -30,6 +32,7 @@ class TrailClassification extends Model
         'crowd_confidence' => 'decimal:2',
         'visibility_confidence' => 'decimal:2',
         'stream_delay_ms' => 'integer',
+        'video_duration' => 'integer',
         'retry_count' => 'integer',
     ];
 
@@ -59,7 +62,7 @@ class TrailClassification extends Model
      */
     public function getWeatherLabelAttribute(): string
     {
-        return match($this->weather) {
+        return match ($this->weather) {
             'cerah' => 'Cerah',
             'berawan' => 'Berawan/Berkabut',
             'hujan' => 'Hujan',
@@ -72,7 +75,7 @@ class TrailClassification extends Model
      */
     public function getCrowdLabelAttribute(): string
     {
-        return match($this->crowd) {
+        return match ($this->crowd) {
             'sepi' => 'Sepi (0-2 orang)',
             'sedang' => 'Sedang (3-10 orang)',
             'ramai' => 'Ramai (>10 orang)',
@@ -85,7 +88,7 @@ class TrailClassification extends Model
      */
     public function getVisibilityLabelAttribute(): string
     {
-        return match($this->visibility) {
+        return match ($this->visibility) {
             'jelas' => 'Jelas',
             'kabut_sedang' => 'Kabut Sedang',
             'kabut_tebal' => 'Tertutup Kabut',

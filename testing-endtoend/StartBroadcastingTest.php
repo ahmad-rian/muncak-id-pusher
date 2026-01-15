@@ -97,3 +97,55 @@ class StartBroadcastingTest extends DuskTestCase
     }
 }
 
+<?php
+
+namespace Tests\Browser;
+
+use App\Models\User;
+use App\Models\LiveStream;
+use Laravel\Dusk\Browser;
+use Tests\DuskTestCase;
+
+class StartBroadcastingTest extends DuskTestCase
+{
+    /**
+     * Pengujian fungsionalitas halaman broadcast
+     * Memverifikasi akses halaman, elemen UI, dan pustaka Pusher
+     */
+    public function testBroadcastPageFunctionality()
+    {
+        $admin = User::where('email', 'admin@admin')->first();
+        $this->assertNotNull($admin, 'Admin should exist from seeder');
+
+        $stream = LiveStream::factory()->create([
+            'broadcaster_id' => $admin->id,
+            'title' => 'Test Stream Pusher',
+            'status' => 'scheduled',
+        ]);
+
+        $this->browse(function (Browser $browser) use ($admin, $stream) {
+            $browser->loginAs($admin)
+                ->visit("/admin/live-stream/broadcast/{$stream->slug}")
+                ->pause(3000)
+                ->screenshot('broadcast-page-loaded')
+                
+                // Verifikasi elemen UI penting
+                ->assertSee($stream->title)
+                ->assertPresent('#camera-preview')
+                ->assertPresent('#viewer-count');
+
+            // Verifikasi pustaka Pusher loaded
+            $pusherLoaded = $browser->script(
+                'return typeof Pusher !== "undefined";'
+            )[0];
+            $this->assertTrue(
+                $pusherLoaded, 
+                'Pusher library should be loaded'
+            );
+
+            $browser->screenshot('broadcast-page-complete');
+        });
+
+        $stream->delete();
+    }
+}
